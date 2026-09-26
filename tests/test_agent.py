@@ -157,3 +157,116 @@ def test_stats_and_samples(world, tmp_path):
     rows = tools.samples_by_type("单边账", limit=1)["rows"]
     assert len(rows) == 1 and rows[0]["order_id"] in ("o2", "o3")
     assert tools.samples_by_type("版本差异")["rows"] == []
+
+
+# ── loop + attribute：五件套行为（注入假模型）──────────────────
+@pytest.fixture()
+def finding_world(world, tmp_path):
+    out = tmp_path / "engine"
+    out.mkdir(exist_ok=True)
+    findings = {"audit": {}, "findings": [
+        {"finding_id": "F000001", "order_id": "o2", "diff_type": "单边账",
+         "variant": "删账单", "target_side": "bills", "confidence": 0.9,
+         "description": "有支付与明细但平台账单缺失", "verified": True}]}
+    (out / "findings.json").write_text(
+        json.dumps(findings, ensure_ascii=False), encoding="utf-8")
+    return out
+
+
+GOOD_ANSWER = ("差异 F000001：订单 o2 有支付 110.00 与明细 1 行，但平台账单 0 行，"
+               "属单边账/删账单。建议核对账单生成环节。")
+
+
+def test_attribute_llm_path(world, finding_world, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    calls = []
+    monkeypatch.setattr(llm, "chat", lambda msgs, max_tokens=2000:
+                        calls.append(msgs) or GOOD_ANSWER)
+    from src.agent import attribute
+    out = attribute.attribute("F000001")
+    assert out["source"] == "llm" and "110.00" in out["answer"]
+    assert len(calls) == 1
+    assert out["facts_sha256"]
+
+
+def test_attribute_hallucination_falls_back(world, finding_world, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    calls = []
+
+    def fake_chat(msgs, max_tokens=2000):
+        calls.append(msgs)
+        return "账单金额 888.88 元，订单 ffffffff11111111ffffffff11111111 缺失。"
+
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    from src.agent import attribute
+    out = attribute.attribute("F000001")
+    assert out["source"] == "fallback"
+    assert "888.88" not in out["answer"]
+    assert len(calls) == 2          # 初答 + 重试一次 = 预算上限
+
+
+def test_attribute_fallback_without_key(world, finding_world, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    from src.agent import attribute
+    out = attribute.attribute("F000001")
+    assert out["source"] == "fallback"
+    assert "F000001" in out["answer"] and "o2" in out["answer"]
+
+
+def test_attribute_unknown_ref(world, finding_world):
+    from src.agent import attribute
+    out = attribute.attribute("F999999")
+    assert out["source"] == "fallback" and "找不到" in out["answer"]
+
+
+def test_attribute_writes_trace(world, finding_world, tmp_path, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    from src.agent import attribute
+    attribute.attribute("F000001")
+    trace_file = tmp_path / "agent" / "trace.jsonl"
+    lines = trace_file.read_text(encoding="utf-8").strip().splitlines()
+    rec = json.loads(lines[-1])
+    assert rec["kind"] == "attribute" and rec["source"] == "fallback"
+    assert rec["reason"] == "no_key" and rec["ref"] == "F000001"
+
+
+# ── ask：意图路由（确定性，模板直答不调模型）───────────────────
+def test_ask_order_id_routes_to_facts(world, finding_world, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    calls = []
+    monkeypatch.setattr(llm, "chat", lambda msgs, max_tokens=2000:
+                        calls.append(msgs) or f"订单 {ORPHAN} 是孤儿账单。")
+    from src.agent import ask
+    out = ask.ask(f"帮我看看订单 {ORPHAN} 怎么回事")
+    assert out["source"] == "llm" and len(calls) == 1
+
+
+def test_ask_stats_uses_template_without_llm(world, finding_world, tmp_path, monkeypatch):
+    out_dir = tmp_path / "engine"
+    (out_dir / "score.json").write_text(
+        json.dumps({"gt_total": 3, "finding_total": 4, "tp": 3, "fn": 0,
+                    "fp": 1, "fp_natural": 1, "fp_other": 0, "recall": 1.0,
+                    "precision_other": 1.0}, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    calls = []
+    monkeypatch.setattr(llm, "chat", lambda msgs, max_tokens=2000: calls.append(msgs))
+    from src.agent import ask
+    out = ask.ask("引擎成绩怎么样，一共发现多少条？")
+    assert calls == []                    # 统计是确定性答案，不花模型调用
+    assert out["source"] == "fallback" and "3" in out["answer"]
+
+
+def test_ask_type_name_gives_stats_and_samples(world, finding_world, tmp_path):
+    from src.agent import ask
+    out = ask.ask("单边账有哪些例子？")
+    assert out["source"] == "fallback"
+    assert "F000001" in out["answer"]     # 例子来自事实单
+
+
+def test_ask_unknown_intent_gives_capability_hint(world, finding_world, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+    calls = []
+    monkeypatch.setattr(llm, "chat", lambda msgs, max_tokens=2000: calls.append(msgs))
+    from src.agent import ask
+    out = ask.ask("今天天气如何？")
+    assert calls == [] and "能查" in out["answer"] or "能力" in out["answer"]
