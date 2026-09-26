@@ -59,9 +59,10 @@ function showError(sel, err) {
 async function renderOverview() {
   $("#overview-error").hidden = true;
   try {
-    const [ov, eng] = await Promise.all([
+    const [ov, eng, agent] = await Promise.all([
       fetchJSON("/api/overview"),
       fetchJSON("/api/engine").catch(() => ({ available: false })),
+      fetchJSON("/api/agent/status").catch(() => ({ available: false })),
     ]);
     $("#seed-badge").textContent = `种子 ${ov.seed}`;
 
@@ -81,6 +82,8 @@ async function renderOverview() {
         <div class="kpi__value">${k.value}</div>
         <div class="kpi__foot">${k.foot}</div>
       </div>`).join("");
+
+    $("#ask-card").hidden = !agent.available;
 
     const entries = Object.entries(ov.gt.by_type).sort((a, b) => b[1] - a[1]);
     const max = Math.max(...entries.map(([, n]) => n));
@@ -142,7 +145,8 @@ async function renderDiffs() {
         const conf = isEngine
           ? `<td class="num">${Math.round(r.confidence * 100)}%</td>` : "";
         return `
-        <tr class="rowlink" data-gt="${r.gt_id || ""}" data-order="${r.order_id}">
+        <tr class="rowlink" data-gt="${r.gt_id || ""}" data-order="${r.order_id}"
+            data-finding="${r.finding_id || ""}">
           <td class="mono">${id}</td>
           <td class="mono cell-id">${r.order_id}</td>
           <td>${badge(r.diff_type)}</td>
@@ -154,7 +158,7 @@ async function renderDiffs() {
       }).join("");
       tbody.querySelectorAll("tr.rowlink").forEach((tr) => {
         tr.addEventListener("click", () =>
-          openLedger(tr.dataset.gt || null, tr.dataset.order));
+          openLedger(tr.dataset.gt || null, tr.dataset.order, tr.dataset.finding || null));
       });
     }
 
@@ -230,7 +234,54 @@ function renderLedgerSection(sec, rows, gt) {
   return `<div class="ledger-sec"><h3>${sec.label} · ${rows.length} 行</h3>${inner}</div>`;
 }
 
-async function openLedger(gtId, orderId) {
+function renderAgentAnswer(el, data) {
+  const tag = data.source === "llm"
+    ? `<span class="ai-tag ai-tag--llm">AI · 已过白名单校验</span>`
+    : `<span class="ai-tag">确定性文案</span>`;
+  el.innerHTML = `<div class="ask-answer__meta">${tag}</div>${data.answer}`
+    + (data.refs.length ? `<div class="ask-answer__refs">引用：${data.refs.map((r) => `<span class="mono">${r}</span>`).join(" · ")}</div>` : "");
+  el.hidden = false;
+}
+
+async function askAgent() {
+  const input = $("#ask-input");
+  const q = input.value.trim();
+  if (!q) return;
+  const box = $("#ask-answer");
+  box.hidden = false;
+  box.textContent = "思考中…";
+  try {
+    const res = await fetch("/api/agent/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || `${res.status}`);
+    renderAgentAnswer(box, body);
+  } catch (err) {
+    box.textContent = "问答失败：" + err.message;
+  }
+}
+
+let currentRef = null;
+
+async function askLedgerAttribution() {
+  if (!currentRef) return;
+  const box = $("#ledger-ai-answer");
+  box.hidden = false;
+  box.textContent = "思考中…";
+  try {
+    renderAgentAnswer(box, await fetchJSON(`/api/agent/attribute/${currentRef}`));
+  } catch (err) {
+    box.textContent = "归因失败：" + err.message;
+  }
+}
+
+async function openLedger(gtId, orderId, findingId) {
+  currentRef = findingId || gtId || orderId;
+  $("#ledger-ai").hidden = !currentRef;
+  $("#ledger-ai-answer").hidden = true;
   const url = gtId ? `/api/diffs/${gtId}/ledger` : `/api/ledger/order/${orderId}`;
   let led;
   try {
@@ -274,6 +325,9 @@ function route() {
 }
 
 wireDiffsControls();
+$("#ask-btn").addEventListener("click", askAgent);
+$("#ask-input").addEventListener("keydown", (e) => { if (e.key === "Enter") askAgent(); });
+$("#ledger-ai-btn").addEventListener("click", askLedgerAttribution);
 document.querySelectorAll("#ledger-modal [data-close]").forEach((el) => {
   el.addEventListener("click", closeLedger);
 });

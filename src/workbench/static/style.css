@@ -360,3 +360,28 @@ h2 { font-size: 15px; font-weight: 600; margin: 0; }
   .counts-grid > div:nth-child(n+3) { border-top: 1px solid var(--border); }
   .modal__panel { inset: 2vh 3vw auto 3vw; transform: none; width: auto; }
 }
+
+/* ── AI 问答（P3 受约束出口）────────────────────────────── */
+.ask { display: flex; gap: 8px; }
+.ask input {
+  flex: 1; padding: 9px 12px; font: inherit; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 6px; background: #fff;
+}
+.ask input:focus { outline: 2px solid #bfdbfe; border-color: var(--accent); }
+.btn--primary {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.btn--primary:hover:not(:disabled) { background: #1d4ed8; color: #fff; }
+.ask-answer {
+  margin-top: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.7;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: #f8fafc; white-space: pre-wrap;
+}
+.ask-answer__meta { margin-bottom: 6px; }
+.ai-tag {
+  display: inline-block; padding: 1px 8px; font-size: 11px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); background: #fff;
+}
+.ai-tag--llm { border-color: #bfdbfe; color: #1d4ed8; background: var(--accent-weak); }
+.ask-answer__refs { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.ledger-ai { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }

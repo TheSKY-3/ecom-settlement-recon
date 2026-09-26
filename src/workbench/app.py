@@ -2,14 +2,19 @@
 结论一律来自数据层/引擎层。"""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.agent import ask as agent_ask
+from src.agent import attribute as agent_attribute
+from src.agent import llm
 from src.workbench import data
-from src.workbench.contracts import DiffsPage, EnginePage, LedgerView, Overview
+from src.workbench.contracts import (
+    AgentAnswer, AskRequest, DiffsPage, EnginePage, LedgerView, Overview)
 
 app = FastAPI(title="对账工作台", docs_url="/api/docs")
 _STATIC = Path(__file__).resolve().parent / "static"
@@ -67,6 +72,22 @@ def api_engine_findings(
     if page_data is None:
         raise HTTPException(status_code=404, detail="引擎尚未运行：先跑 scripts/run_engine.py")
     return page_data
+
+
+@app.get("/api/agent/status")
+def api_agent_status() -> dict:
+    return {"available": llm.available(),
+            "model": os.environ.get("RECON_AGENT_MODEL", llm.DEFAULT_MODEL)}
+
+
+@app.post("/api/agent/ask", response_model=AgentAnswer)
+def api_agent_ask(body: AskRequest) -> dict:
+    return agent_ask.ask(body.question)
+
+
+@app.get("/api/agent/attribute/{ref}", response_model=AgentAnswer)
+def api_agent_attribute(ref: str) -> dict:
+    return agent_attribute.attribute(ref)
 
 
 @app.get("/")

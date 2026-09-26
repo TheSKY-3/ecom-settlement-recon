@@ -55,12 +55,13 @@ def attribute_fallback(facts: dict) -> str:
 
 
 def stats_fallback(score: dict) -> str:
+    g = score.get
     return (
-        f"引擎共报 {score['finding_total']} 条发现；对照标准答案 "
-        f"{score['gt_total']} 颗，命中 {score['tp']}、漏检 {score['fn']}、"
-        f"召回 {_pct(score['recall'])}；误报 {score['fp']} 条中"
-        f"自然差异 {score['fp_natural']} 条、真误报 {score['fp_other']} 条"
-        f"（精确率 {_pct(score['precision_other'])}）。"
+        f"引擎共报 {g('finding_total', '—')} 条发现；对照标准答案 "
+        f"{g('gt_total', '—')} 颗，命中 {g('tp', '—')}、漏检 {g('fn', '—')}、"
+        f"召回 {_pct(g('recall', 0.0))}；误报 {g('fp', '—')} 条中"
+        f"自然差异 {g('fp_natural', '—')} 条、真误报 {g('fp_other', '—')} 条"
+        f"（精确率 {_pct(g('precision_other', 0.0))}）。"
         "自然差异 = 数据自带的问题，测试集未给标准答案，单独统计不计误报。"
     )
 

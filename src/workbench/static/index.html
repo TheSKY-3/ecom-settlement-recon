@@ -40,6 +40,16 @@
         <div class="card__head"><h2>三本账行数 <span class="muted">（干净世界 = 应然；脏世界 = 埋雷后的实然）</span></h2></div>
         <div class="table-wrap" id="ledger-counts"></div>
       </div>
+
+      <div class="card" id="ask-card" hidden>
+        <div class="card__head"><h2>AI 问答 <span class="muted">（受约束出口：答案中的数字必须来自引擎与账本，违者自动降级为确定性文案）</span></h2></div>
+        <div class="ask">
+          <input id="ask-input" type="text"
+                 placeholder="试试：单边账有哪些例子？ / 引擎成绩怎么样？ / 粘贴一个 32 位订单号…">
+          <button class="btn btn--primary" id="ask-btn">提问</button>
+        </div>
+        <div class="ask-answer" id="ask-answer" hidden></div>
+      </div>
     </section>
 
     <!-- 标准答案 -->
@@ -101,9 +111,9 @@
         <div class="card__head"><h2>四层架构</h2></div>
         <pre class="arch">数据层（只读）   data/olist.db + data/synthetic/{clean,dirty}/*.csv
                   │
-引擎层 P2（进行中）matcher → classifier → audit   ← 差异识别与归因
+引擎层 P2（已完成）  matcher → classifier → verifier → audit ← 召回 100%，真误报 0
                   │
-Agent 层 P3（待建）attribute(差异) / ask(问题)    ← AI 只在这两个受控出口
+Agent 层 P3（本页 AI 问答）attribute(差异) / ask(问题) ← AI 只在这两个受控出口
                   │
 工作台（本页）     FastAPI 只读接口 + 静态页面    ← 只展示，不产生结论</pre>
       </div>
@@ -115,8 +125,8 @@ Agent 层 P3（待建）attribute(差异) / ask(问题)    ← AI 只在这两�
             <tbody>
               <tr><td>P0</td><td>数据底座 + 自然差异盘点（576 单天然不一致）</td><td><span class="pill pill--done">完成</span></td></tr>
               <tr><td>P1</td><td>评测集冻结：干净/脏三本账 + 1,750 条标准答案</td><td><span class="pill pill--done">完成</span></td></tr>
-              <tr><td>P2</td><td>确定性匹配引擎（无 AI 全量跑通并出分）</td><td><span class="pill pill--doing">进行中</span></td></tr>
-              <tr><td>P3</td><td>Agent 壳：attribute / ask 两出口，五件套护栏</td><td><span class="pill">待开始</span></td></tr>
+              <tr><td>P2</td><td>确定性匹配引擎（无 AI 全量跑通并出分）</td><td><span class="pill pill--done">完成</span></td></tr>
+              <tr><td>P3</td><td>Agent 壳：attribute / ask 两出口，五件套护栏</td><td><span class="pill pill--doing">进行中</span></td></tr>
               <tr><td>P4</td><td>全量评测表 + BenchRec 跨域验证</td><td><span class="pill">待开始</span></td></tr>
             </tbody>
           </table>
@@ -126,7 +136,8 @@ Agent 层 P3（待建）attribute(差异) / ask(问题)    ← AI 只在这两�
         <div class="card__head"><h2>口径与边界</h2></div>
         <ul class="about-list">
           <li>本页所有数字来自<b>冻结评测集</b>（种子 20260926，同种子重跑逐字节一致）；平台账单与退款流水为按规则卡合成，非真实平台数据。</li>
-          <li>工作台<b>只读</b>：不写数据、不产生结论；差异判定由确定性引擎给出（P2 接入后本页展示引擎结果）。</li>
+          <li>工作台<b>只读</b>：不写数据、不产生结论；差异判定由确定性引擎给出（P2 已接入：数据源可切"引擎判定"）。</li>
+          <li>AI 问答是<b>受约束出口</b>：模型只能用给定证据组织语言，答案中的数字/编号经白名单校验，违规自动降级为确定性文案。</li>
           <li>对外口径：<b>本地原型 + 合成数据评测</b>，不声称真实业务上线效果。</li>
           <li>数据来源：Olist 公开数据集（Kaggle <span class="mono">olistbr/brazilian-ecommerce</span>，CC BY-NC 4.0）。不使用任何公司真实账单。</li>
         </ul>
@@ -151,6 +162,10 @@ Agent 层 P3（待建）attribute(差异) / ask(问题)    ← AI 只在这两�
       </div>
       <p class="modal__desc" id="ledger-desc"></p>
       <div class="modal__body" id="ledger-body"></div>
+      <div class="ledger-ai" id="ledger-ai" hidden>
+        <button class="btn" id="ledger-ai-btn">AI 归因解释</button>
+        <div class="ask-answer" id="ledger-ai-answer" hidden></div>
+      </div>
     </div>
   </div>
 

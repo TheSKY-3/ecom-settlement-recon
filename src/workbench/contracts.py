@@ -52,3 +52,14 @@ class Overview(BaseModel):
     clean: dict[str, int]
     dirty: dict[str, int]
     gt: dict
+
+
+class AgentAnswer(BaseModel):
+    answer: str
+    source: str                  # "llm"（过白名单的 AI 文案）| "fallback"（确定性模板）
+    refs: list[str]
+    facts_sha256: str | None
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
