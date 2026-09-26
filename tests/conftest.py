@@ -36,12 +36,14 @@ def engine_env(tmp_path, monkeypatch):
     o5 自然差异（支付≠明细）；o6 取消已审批退款缺失；o7 重复结算；o8 版本差异；
     o9 费率错误；o10 漏运费；o11 活跃但有退款（不该有的退款）。另加孤儿账单 ORPHAN。"""
     synth = tmp_path / "synthetic"
-    orders = [("o1", "delivered", "2026-01-01 10:00:00"), ("o2", "delivered", "2026-01-02 10:00:00"),
-              ("o3", "canceled", "2026-01-03 10:00:00"), ("o4", "canceled", ""),
-              ("o5", "delivered", "2026-01-05 10:00:00"), ("o6", "unavailable", "2026-01-06 10:00:00"),
-              ("o7", "delivered", "2026-01-07 10:00:00"), ("o8", "delivered", "2026-01-08 10:00:00"),
-              ("o9", "delivered", "2026-01-09 10:00:00"), ("o10", "delivered", "2026-01-10 10:00:00"),
-              ("o11", "delivered", "2026-01-11 10:00:00")]
+    orders = [(f"o{i}", status, approved, "2026-01-01 09:00:00")
+              for i, (status, approved) in enumerate([
+                  ("delivered", "2026-01-01 10:00:00"), ("delivered", "2026-01-02 10:00:00"),
+                  ("canceled", "2026-01-03 10:00:00"), ("canceled", ""),
+                  ("delivered", "2026-01-05 10:00:00"), ("unavailable", "2026-01-06 10:00:00"),
+                  ("delivered", "2026-01-07 10:00:00"), ("delivered", "2026-01-08 10:00:00"),
+                  ("delivered", "2026-01-09 10:00:00"), ("delivered", "2026-01-10 10:00:00"),
+                  ("delivered", "2026-01-11 10:00:00")], start=1)]
     items = [(f"o{i}", 1, "p1", "s1", 100.0, 10.0) for i in range(1, 12)]
 
     pays = []
