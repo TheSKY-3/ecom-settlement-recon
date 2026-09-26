@@ -1,0 +1,15 @@
+# 数据与构建产物不入库（原始数据与 DB 只在本机）
+data/raw/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db

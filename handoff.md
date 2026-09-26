@@ -1,0 +1,122 @@
+# 对账 Agent 项目 Handoff（新工作区启动文档）
+
+> 生成日期：2026-09-26
+> 用途：本文档自包含全部已定决策与指针。新工作区建成后把本文件放入根目录，任何新会话读完即可开工，无需重新调研。
+> 状态：选题已定，尚未动工（P0 未开始）。
+
+---
+
+## 1. 项目一句话定义
+
+**电商多平台结算对账 Agent**：对"平台账单 × 业务订单 × 支付流水"三方数据做确定性核对 + 差异归因的受约束 Agent。
+
+- 定位：求职作品集项目（"流程自动化 Agent"），不是对账行业从业方向。
+- 与 ECom Review Intelligence（商品侧评论证据决策）组成作品集"电商经营双引擎"：一个管商品，一个管钱。
+- 英文名建议：`ecom-settlement-recon` / E-Commerce Settlement Reconciliation Agent。
+
+## 2. 选题决策记录（为什么是对账，为什么不是泛财务）
+
+选题五条标准：①有真实流程理解 ②数据合规可得 ③价值可量化 ④命中目标 JD ⑤与现有作品集协同不重复。
+
+- **只有对账同时满足五条**：实习期间亲手做过如祺月度对账（匹配键、结算判据、版本兼容、15 项验证，细节真实可讲）；数据可用公开集+合成；价值口径现成（工时+检出率）；命中"AI Agent 内部提效工具""数据交叉核对+自动化"类 JD；与 ECom 项目架构直接复用。
+- **泛财务（报销/发票/凭证/报税）不选**：无真实流程经验、无合规数据、成熟商业产品占位难差异化。对账是财务大类里唯一有实战资产的子场景。
+- **市场判断**：GitHub 上无头部对账 Agent 开源项目（多为 2–11 star 作品集级项目）；业界主流架构收敛为"确定性优先、LLM 兜底、审计留痕"——与本项目拟复用的 ECom 受约束架构同构，是差异化优势。
+- 行业佐证：对账是企业高频刚性场景；Gartner 预测 2026 年 30%+ 大企业用数字员工辅助财务核算；多平台电商每月数十万流水、20+ 种账单格式、口径互不兼容。
+
+## 3. 数据方案（三层，全部不涉公司数据）
+
+### 第一层：Olist 巴西电商数据集（主底座，真实公开数据）
+
+- 下载：https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce （9 张 CSV）
+- 本地状态：**已解决（2026-09-26）**——全量 9 表存在于本机 `E:\eng_project\baxi\olist-biz-analytics\olist-biz-analytics\data\raw\`（121MB，行数与 Kaggle 发布版一致），已复制到本工作区 `data/raw/`，Kaggle 无需再下；旧项目 `D:\eng_project\olist-biz-analytics` 的 DDL/视图（MySQL 版）仍可参考。
+- 对账三方拼法：
+  - **支付流水侧** = `olist_order_payments`（单订单多行支付、分期，天然流水形态）
+  - **业务单据侧** = `olist_orders` + `olist_order_items`（canceled/unavailable 状态、price + freight）
+  - **平台账单侧** = 用 Olist 公开佣金/运费规则从 items 合成构造（平台账单无公开数据集，合成是唯一正路）
+- 待验证：`payment_value` 与 items 总价（含运费）的自然不一致在数据集中真实存在多少，作为天然差异的第一批样本。
+
+### 第二层：BenchRec（真实对账基准，第二域泛化验证）
+
+- 下载：https://www.kaggle.com/datasets/benchmarkteam/benchrec-real-world-cash-reconciliation-dataset
+- 来历：Operartis 出品、ICAIF 2023 基准竞赛，"Tier 1 银行现金对账（交易匹配）"，银行流水 vs 内部账。
+- 用法：不作主战场；用于证明同一套对账引擎换域可用（架构泛化性证据）。
+
+### 第三层：合成差异注入（评测集，项目价值核心）
+
+在 Olist 底座上注入受控差异，雷区清单自实习对账框架抽象：
+
+| 差异类型 | 说明 |
+|---|---|
+| 单边账 | 有支付无订单 / 有订单无支付 |
+| 金额不符 | 含运费口径、拆分支付、多支付记录 |
+| 状态不一致 | canceled/unavailable 但存在支付 |
+| 退款遗漏 | 退款未回冲 |
+| 重复结算 | 同一交易重复入账 |
+| 版本差异 | 账单新旧版本（对应如祺"新版/旧版账单兼容"） |
+
+关键优势：雷是自己埋的 → ground truth 已知 → 检出率/误报率/归因准确率可精确计算成评测表（公司数据既不能公开也无标签，合成数据在评测上反而更强）。
+
+### 红线（不可违反）
+
+1. **一律不用公司数据**。`D:\eng_project\对账自动化\` 下全部为真实账单（含 6/7 月结算账单、外部表）。
+2. **特别注意**：`对账自动化\如祺对账工具包\样例数据\` 里文件名与真实账单一致的"样例"是**真实数据副本，不是脱敏样例**，任何公开仓库/演示不得包含。
+3. 公司数据唯一可用形式：业务规则卡（匹配逻辑、结算判据可抽象写进合成设计），具体金额与字段不得带出。
+4. 对外措辞：只说"本地原型 / 工程验证通过 + 合成数据评测结果"，不声称上线、不声称真实业务 ROI（与 ECom 项目口径一致）。
+
+## 4. 技术架构（复用 ECom 已验证模式）
+
+参考实现：`D:\eng_project\ecom-review-intelligence`（架构手册：知识库 `ECom-Review-Intelligence-KB\` 14 篇）。
+
+- **确定性优先**：SQLite/FTS5 证据引擎 + 规则匹配引擎先跑；LLM 只做两件事——歧义单据归因、自然语言查账（如"上月 X 渠道佣金为什么比预估高 8%"）。
+- **受约束单 Agent**：LangGraph + DeepSeek，工具路由 + tool ledger（预算）。
+- **Verifier**：逐字段核对 + 引用校验，失败关闭、确定性降级。
+- **双轨 Trace**：审计留痕（对账域必须，业界共识 hash-chained audit / cited evidence）。
+
+## 5. 评测方法（复用 ECom P7 方法论）
+
+- 指标：自动匹配率、差异检出率、误报率、归因准确率、对账耗时 vs 手工基线。
+- 方法：与 P7 同构——同一任务集，手工基线 vs Agent 操作对比。
+- 第二域：BenchRec 上重跑核心匹配引擎，报告跨域指标。
+
+## 6. 建议里程碑
+
+| 阶段 | 内容 | 验收 |
+|---|---|---|
+| P0 | Olist 9 表下载入库（SQLite）+ 自然差异盘点 + 结构冻结 | data/raw 非空；自然差异报告 |
+| P1 | 差异注入规范 v1 + ground truth 生成器；BenchRec 格式调研 | 评测集冻结，雷区清单成文 |
+| P2 | 确定性匹配引擎 + 6 类差异分类器 + 验证器 | 无 LLM 情况下跑通全量对账 |
+| P3 | Agent 壳（受约束规划 + 归因 + 自然语言查账） | LLM 仅出现在歧义路径 |
+| P4 | 全量评测 + 评测表 + BenchRec 跨域验证 | 评测报告成文 |
+| P5（可选） | 对账报告输出 / 极简工作台 | 视时间决定 |
+
+## 7. 既有资产指针
+
+| 资产 | 路径 | 用途 |
+|---|---|---|
+| 架构参考项目 | `D:\eng_project\ecom-review-intelligence` | 受约束 Agent 全套模式 |
+| 架构手册 | `D:\个人知识库\个人知识库\吴柏高_个人知识库_01\ECom-Review-Intelligence-KB\` | 设计决策与复现文档 |
+| Olist 旧项目 | `D:\eng_project\olist-biz-analytics`（data/raw 空，DDL/ETL 现成） | 数据底座 |
+| 对账规则来源 | 知识库 `06_业务框架搭建\如祺月度对账框架.md`、`出租车抽佣计算框架.md`、`05_技能与自动化\WorkBuddy技能\ruqi-reconciliation\SKILL.md`（v2.3） | 差异类型与规则卡抽象（只取规则不取数据） |
+| 简历叙事 | 知识库 `03_简历与求职\实习AI产品案例集复盘.md` 案例三 | 与本项目串联成"实习经验→Agent 作品"主线 |
+
+## 8. 简历叙事定位（先定口径再动手）
+
+- 主线：实习对账经验（真实细节）→ 抽象成通用对账 Agent（作品）→ 可量化评测（合成 ground truth）。
+- 喂两类 JD：①"数据交叉核对 + 自动化 + AI 提效"结构；②"用 AI Agent 制作内部小工具 + 价值核算"。
+- 已有实测口径（仅限实习叙述，需脱敏）："月度对账约 1 天 → 约 10 分钟（部门财务实测）"；本项目新产出一律用合成数据指标。
+
+## 9. 开工清单（新工作区第一周）
+
+1. 把本文件移入新工作区根目录；`git init`；建 README 与目录骨架（建议 `data/raw` gitignore、`data/synthetic`、`src/matcher`、`src/agent`、`evals/`、`docs/`）。
+2. Kaggle 下载 Olist 9 张 CSV → `data/raw/`；跑自然差异盘点（payment_value vs items 总价）。
+3. Kaggle 下载 BenchRec → 看格式，写一页格式调研笔记（不着急接入）。
+4. 写差异注入规范 v0（雷区清单 + 注入比例 + ground truth 格式）。
+5. 参照 `ecom-review-intelligence` 抄架构骨架（SQLite + FTS5 起步）。
+
+## 10. 顺序纪律（重要）
+
+知识库既有结论：ECom Review Intelligence 当前最重要的一步是**完成 P7 真人结构化试用**，不是开新坑。本项目排序在 P7 收尾之后（或经确认后小步并行），P0 前不写业务代码。
+
+## 11. 进展日志
+
+- **2026-09-26（P0 完成）**：工作区 `D:\eng_project\智能体选题_对账` 建成（git main；骨架 `data/synthetic`、`src/matcher`、`src/agent`、`evals`、`docs`、`scripts`、`sql`）。Olist 数据源落实：本机 E 盘副本（`E:\eng_project\baxi\...`，121MB，9 表齐全，行数与 Kaggle 发布版一致），已复制到 `data/raw/` 并入库 `data/olist.db`（SQLite，177MB；行数与金额校验通过）。DDL 由旧项目 MySQL 版移植为 `sql/01_schema.sql`——原始层**有意无约束**，重复键不丢行，唯一性异常由对账层测量。自然差异盘点完成：报告 `docs/natural-diff-report.md`，可复现脚本 `scripts/natural_diff_inventory.py`（纯标准库）。核心数字：两侧齐全订单金额一致率 99.42%（98089/98665），自然不一致 576 单（多付 367/少付 209，其中 477 单 ≤10 BRL 尾差）；单边账：无明细 775（unavailable 603/canceled 164/…/shipped 1）、无支付仅 1 单且为 delivered；孤儿支付/明细 0；canceled/unavailable 已付 1234 单 269,735 BRL（1093 单曾审批）——状态不一致/退款遗漏的 ground truth 种子；支付/明细键零重复、789 条重复 review_id；多笔支付形态丰富（最高 29 笔/单）。**P1 输入**：重复结算与版本差异为纯注入区；退款遗漏需合成退款流水表；"已送达但无支付"（order bfbd0f9b…）作保留金样本。BenchRec：Kaggle 独家、CC BY 4.0、约 4 万样本；本机无 Kaggle 凭证未下载，笔记 `docs/benchrec-format-notes.md`。下一步：P1 差异注入规范 v1 + ground truth 生成器。
