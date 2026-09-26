@@ -11,7 +11,7 @@
 | P1 评测集冻结 | ✅ 完成 | [注入规范 v1](docs/injection-spec-v1.md) + `data/synthetic/`（干净/脏三本账 + 1,750 条标准答案） |
 | 工作台 v1（2026-09-26 新增） | ✅ 完成 | `src/workbench/`（FastAPI 只读接口 + 静态前端）+ `对账工作台.exe` 薄启动器 |
 | P2 确定性匹配引擎 | ✅ 完成 | `src/engine/`（分类器/验证器/审计链）+ `evals/score.py` 判分 + [P2 成绩单](docs/reports/p2-engine-report.md)（召回/精确均 100%）|
-| P3 Agent 壳（自研受约束循环 + DeepSeek） | 未开始 | — |
+| P3 Agent 壳（自研受约束循环 + DeepSeek） | ✅ 完成 | `src/agent/`（attribute/ask 两出口 + 五件套护栏）+ 工作台 AI 问答/归因 |
 | P4 全量评测 + BenchRec 跨域 | 未开始 | BenchRec 数据已落位 `data/raw/benchrec/` |
 
 P1 关键数字：冻结考卷 = 六类雷共 **1,750** 颗（单边账 700 / 金额不符 500 / 状态不一致 150 /
@@ -20,6 +20,10 @@ P1 关键数字：冻结考卷 = 六类雷共 **1,750** 颗（单边账 700 / �
 P2 关键数字：确定性引擎约 2.5 秒跑完 9.9 万单全量对账——标准答案 1,750 颗雷**全部命中**
 （召回 100%），**真误报 0**；另报出 575 条数据自带的自然差异（与 P0 盘点口径吻合），与人工雷互不混淆。
 考卷在首跑后重冻结为 v1.1（漏运费雷避开零运费单，见注入规范修订记录），数量口径不变。
+
+P3 关键数字：Agent 壳上线——模型**只许组织语言不许算账**：答案中的每个数字/编号都过
+事实单白名单校验，违规自动降级为确定性模板（真模型实测：缺失信息如实回答"事实单未提供"，
+未出现编造）。无 API key 时全链路降级为模板，82 个 pytest 全程离线。
 
 P0 关键数字：两侧齐全订单金额一致率 **99.42%**（98089/98665），自然不一致 576 单（多付 367 / 少付 209）；
 单边账自然样本：无明细 775 单、已送达但无支付 1 单；canceled/unavailable 已付 1234 单（269,735 BRL，
@@ -31,6 +35,8 @@ P0 关键数字：两侧齐全订单金额一致率 **99.42%**（98089/98665）�
 （`http://127.0.0.1:8770`，只监听本机）。三个页面：概览（冻结评测集数字 + 六类差异分布）、
 差异列表（1,750 颗雷筛选/搜索/翻页，点行看该订单在五本账的原始记录；**数据源可切换为
 "引擎判定"**——2,325 条引擎发现带置信度，非标准答案订单的弹层会注明属自然差异）、关于（架构与口径）。
+配了 key 时（环境变量 `DEEPSEEK_API_KEY`）概览出现 **AI 问答框**、每条差异弹层出现 **AI 归因解释**按钮——
+受约束出口，答案里的数字必须来自引擎与账本，截图 `docs/assets/workbench-agent.png`。
 关闭服务控制台窗口即退出。exe 只有 7MB，只是启动器——代码与数据都在项目目录，改完刷新浏览器即生效。
 
 ```bash
@@ -41,7 +47,8 @@ E:/py_anzhuang/python.exe -m venv .venv        # 已有 .venv 可跳过
 .venv/Scripts/python.exe scripts/build_launcher.py
 ```
 
-界面截图见 `docs/assets/workbench-*.png`；设计与风格依据见
+界面截图见 `docs/assets/workbench-*.png`；Agent 壳设计与护栏口径见
+[P3 设计文档](docs/superpowers/specs/2026-09-26-p3-agent-design.md)；工作台设计与风格依据见
 [工作台设计文档](docs/superpowers/specs/2026-09-26-workbench-design.md)
 （视觉谱系：[shadcn/ui](https://shadcncraft.com) 一脉的低装饰密集数据表 +
 [2026 设计系统盘点](https://www.themasterly.com) 里 Carbon/Polaris 类企业工具风格 +
@@ -66,6 +73,7 @@ E:/py_anzhuang/python.exe scripts/natural_diff_inventory.py  # 重新生成 docs
 - `docs/` — 盘点报告与调研笔记
 - `data/synthetic/` —（P1）合成差异与 ground truth
 - `src/engine/` + `evals/` —（P2）确定性匹配引擎（装载/规则树分类/验证器/审计链）与判分器；`scripts/run_engine.py` 一键跑分
+- `src/agent/` —（P3）受约束 Agent 壳：attribute/ask 两出口、五件套护栏、DeepSeek 薄客户端（密钥只读环境变量）
 - `src/workbench/` — 对账工作台（FastAPI 只读接口 + 静态前端；数据管道本身仍是纯标准库）
 - `launcher/` + `scripts/build_launcher.py` — exe 薄启动器及其构建脚本
 - `src/agent/` —（P3）Agent 壳

@@ -4,6 +4,13 @@
 > 最新在最上面。术语第一次出现用"人话（黑话）"格式，详解见 [glossary.md](glossary.md)。
 > 重要取舍另记 [decisions.md](decisions.md)，没定的事记 [open-questions.md](open-questions.md)。
 
+## 2026-09-26 · P3 Agent 壳完成（受约束两出口，本次）
+
+- **做了什么**：`src/agent/` 六件——llm（DeepSeek 薄客户端，纯标准库 urllib，密钥只读环境变量）、tools（5 个只读事实工具，复用工作台数据层）、guardrails（数字/编号白名单校验，百分比与千分位等价放行、日期整体提取）、prompts（系统提示 + 确定性 fallback 文案）、loop（预算 ≤2 次往返 + 留痕 trace.jsonl + 失败降级）、attribute/ask 两出口（ask 意图路由确定性：统计/例子模板直答不花模型调用，只有归因解释进模型）。工作台接入：概览 AI 问答框 + 每条差异弹层"AI 归因解释"按钮，答案带来源标签。真模型冒烟 `scripts/agent_smoke.py` 通过。
+- **为什么做**：这是项目架构的关键一步——**AI 只出现在两个受控出口，只许组织语言不许算账**。答案里的每个数字/编号必须能在喂给模型的事实单里找到（白名单校验），违规自动降级，"可信"从口号变成代码。
+- **怎么验证的**：82 个 pytest 全绿（agent 24 + workbench 端点 7，全部离线假模型，永不碰网络）；真模型实测三条：归因一条删支付雷（过白名单，引用 F/GT/订单号齐全）、统计问答（模板直答）、护栏实战（开放查询被安全接住，未编造；模型对事实单没有的信息如实回答"事实单未提供"）。截图 `docs/assets/workbench-agent.png`。API key 从 Windows 用户环境变量读到并验证（DeepSeek V4.1 世代，deepseek-flash 带 effort 参数）。
+- **遗留与下一步**：P4 全量评测——评测表成文 + BenchRec 跨域重跑匹配引擎；已知边界（统计词截流开放查询、无多轮/无工具自主循环）记入 P3 spec 第 11 节。
+
 ## 2026-09-26 · P2 确定性匹配引擎完成（含工作台接入，本次）
 
 - **做了什么**：引擎四件套 `src/engine/`（audit 审计链：每步 SHA-256 指纹环环相扣 / matcher 三本账装载 / classifier 六类规则树分类器 / verifier 独立复核器）+ 判分器 `evals/score.py` + 一键跑分脚本 `scripts/run_engine.py`。工作台接入引擎结果：差异列表数据源可切换"标准答案 / 引擎判定"（引擎模式带置信度列），概览第 4 张 KPI 卡亮起，非标准答案订单的证据弹层注明"属自然差异"。全量成绩：**召回 100%（1,750/1,750）、真误报 0**，另报出 575 条自然差异（全部命中 P0 盘点口径，判分分桶不算错）；成绩单 [p2-engine-report.md](reports/p2-engine-report.md)，截图 `docs/assets/workbench-engine*.png`。
