@@ -61,7 +61,7 @@ def engine_env(tmp_path, monkeypatch):
     bills.append(bill("o10", freight="0.00", fee="20.00", settle="80.00"))      # 漏运费
     bills.append(bill(ORPHAN))                                                  # 孤儿账单
 
-    refunds = [{"refund_id": "R_o1", "order_id": "o1", "refund_amount": "110.00",
+    refunds = [{"refund_id": "R_o11", "order_id": "o11", "refund_amount": "110.00",
                 "refund_date": "2026-02-01"}]   # 活跃单有退款 → 不该有的退款
     # o6 取消已审批有支付，但无退款 → 退款遗漏
 
