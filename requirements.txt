@@ -1,0 +1,11 @@
+# 运行时（工作台 Web 层；数据管道仍为纯标准库）
+fastapi>=0.115
+uvicorn>=0.30
+pydantic>=2.7
+
+# 开发/测试
+pytest>=8.0
+httpx>=0.27          # fastapi.testclient 依赖
+
+# 打包（仅构建 exe 启动器时需要）
+pyinstaller>=6.10
