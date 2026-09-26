@@ -30,7 +30,7 @@ def _ref_hit(b_refs: str, a_refs: str) -> bool:
 
 
 def match(b_rows: list[dict], a_rows: list[dict],
-          max_date_gap: int = 3) -> dict[str, frozenset[str]]:
+          max_date_gap: int = 1) -> dict[str, frozenset[str]]:
     idx = build_index(a_rows)
     out: dict[str, frozenset[str]] = {}
     for b in b_rows:
