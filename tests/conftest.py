@@ -53,7 +53,7 @@ def engine_env(tmp_path, monkeypatch):
                      "payment_type": "credit_card", "payment_installments": "1",
                      "payment_value": value})
 
-    bills = [bill(f"o{i}") for i in (1, 3, 5, 7, 8, 9, 10, 11)]
+    bills = [bill(f"o{i}") for i in (1, 3, 5, 7, 11)]           # o2/o6 无账单；o8/o9/o10 单独给
     bills.append(bill("o7", suffix="_DUP"))                                     # 重复结算
     bills.append(bill("o8", rate="0.15", fee="15.00", settle="95.00"))          # v1 旧费率
     bills.append(dict(bill("o8"), bill_id="B_o8_2", version="2"))               # v2 正确
@@ -80,10 +80,15 @@ def engine_env(tmp_path, monkeypatch):
         " order_purchase_timestamp TEXT);"
         "CREATE TABLE order_items (order_id TEXT, order_item_id INTEGER, product_id TEXT,"
         " seller_id TEXT, price REAL, freight_value REAL);"
+        "CREATE TABLE order_payments (order_id TEXT, payment_sequential INTEGER,"
+        " payment_type TEXT, payment_installments INTEGER, payment_value REAL);"
         "CREATE INDEX idx_o ON orders(order_id);"
         "CREATE INDEX idx_i ON order_items(order_id);")
     conn.executemany("INSERT INTO orders VALUES (?,?,?,?)", orders)
     conn.executemany("INSERT INTO order_items VALUES (?,?,?,?,?,?)", items)
+    conn.executemany("INSERT INTO order_payments VALUES (?,?,?,?,?)",
+                     [(p["order_id"], 1, "credit_card", 1, float(p["payment_value"]))
+                      for p in pays])
     conn.commit()
     conn.close()
 
