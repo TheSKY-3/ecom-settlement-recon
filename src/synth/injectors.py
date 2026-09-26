@@ -16,8 +16,13 @@ from src.synth.ground_truth import make_row
 
 def allocate_pools(rng: random.Random, active_ids: list[str], rebill_ids: list[str],
                    refund_ids: list[str], orders_index: dict[str, dict],
-                   counts: dict[str, int]) -> dict[str, list[str]]:
-    """从候选池不放回抽样，保证六类雷落在互斥的订单集合上。"""
+                   counts: dict[str, int],
+                   nonzero_freight_ids: set[str] | None = None) -> dict[str, list[str]]:
+    """从候选池不放回抽样，保证六类雷落在互斥的订单集合上。
+
+    nonzero_freight_ids：明细运费合计 > 0 的订单集合。漏运费雷只许落在其中——
+    运费本来就是 0 的订单埋"漏运费"等于没埋（雷不可判，P2 全量跑分暴露的缺陷）。
+    """
     ids = list(active_ids)
     rng.shuffle(ids)
 
@@ -28,11 +33,27 @@ def allocate_pools(rng: random.Random, active_ids: list[str], rebill_ids: list[s
         chunk, ids = ids[:n], ids[n:]
         return chunk
 
+    def take_filtered(n: int, allowed: set[str]) -> list[str]:
+        nonlocal ids
+        chosen, rest = [], []
+        for oid in ids:
+            if len(chosen) < n and oid in allowed:
+                chosen.append(oid)
+            else:
+                rest.append(oid)
+        ids = rest
+        if len(chosen) < n:
+            raise ValueError(f"注入池不足：漏运费需要 {n}，零运费过滤后只剩 {len(chosen)}")
+        return chosen
+
     pools = {
         "drop_bill": take(counts["drop_bill"]),
         "drop_payment": take(counts["drop_payment"]),
         "wrong_rate": take(counts["wrong_rate"]),
-        "missing_freight": take(counts["missing_freight"]),
+        "missing_freight": (take_filtered(counts["missing_freight"],
+                                          set(nonzero_freight_ids))
+                            if nonzero_freight_ids is not None
+                            else take(counts["missing_freight"])),
         "duplicate": take(counts["duplicate"]),
         "version_diff": take(counts["version_diff"]),
     }
@@ -101,6 +122,8 @@ def inject_amount_mismatch(bills: list[dict], pools: dict, gt_rows: list[dict]) 
                                 len(gt_rows) + 1))
     for oid in pools["missing_freight"]:
         row = _bill_of(bills, oid)
+        if float(row["freight_amount"]) == 0:
+            raise ValueError(f"漏运费雷不可埋：{oid} 本身运费为 0（雷将无法判定）")
         row["freight_amount"] = "0.00"
         _recompute(row, float(row["commission_rate"]))
         gt_rows.append(make_row(oid, "金额不符", "漏运费", "bills",

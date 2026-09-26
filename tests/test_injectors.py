@@ -48,6 +48,9 @@ def run_all(world, seed=config.SEED, counts=COUNTS):
     orders_index, items_by_order, bills, payments, refunds = world
     pools = allocate_pools(random.Random(seed), list(ACTIVE), ["c1", "c2"],
                            ["c1", "c2"], orders_index, counts)
+    bills = [dict(b) for b in bills]          # 每次从干净副本注入，保证可重复
+    payments = [dict(p) for p in payments]
+    refunds = [dict(r) for r in refunds]
     gt = []
     inject_single_sided(bills, payments, orders_index, pools, gt)
     inject_amount_mismatch(bills, pools, gt)
@@ -141,3 +144,27 @@ def test_determinism_same_seed(world):
     a = run_all(world)
     b = run_all(world)
     assert a == b
+
+
+def test_missing_freight_guard_raises():
+    """P2 全量跑分暴露的缺陷回归：零运费订单埋"漏运费"= 雷不可判，必须拒绝。"""
+    bills = [{"bill_id": "B_z1_1", "order_id": "z1", "seller_id": "s1", "version": "1",
+              "issued_date": "2026-01-01", "commission_rate": "0.20",
+              "commission_fee": "20.00", "freight_amount": "0.00",
+              "price_amount": "100.00", "settlement_amount": "80.00"}]
+    with pytest.raises(ValueError, match="漏运费雷不可埋"):
+        inject_amount_mismatch(bills, {"wrong_rate": [], "missing_freight": ["z1"]}, [])
+
+
+def test_allocate_pools_freight_filter(world):
+    orders_index = world[0]
+    allowed = set(ACTIVE[:4])
+    pools = allocate_pools(random.Random(config.SEED), list(ACTIVE), [], [],
+                           orders_index, dict(COUNTS, status_rebill=0, refund_missing=0),
+                           nonzero_freight_ids=allowed)
+    assert set(pools["missing_freight"]) <= allowed
+    with pytest.raises(ValueError, match="零运费过滤"):
+        allocate_pools(random.Random(config.SEED), list(ACTIVE), [], [],
+                       orders_index, dict(COUNTS, status_rebill=0, refund_missing=0,
+                                          missing_freight=len(ACTIVE)),
+                       nonzero_freight_ids=set(ACTIVE[:2]))

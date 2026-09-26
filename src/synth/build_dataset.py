@@ -97,9 +97,11 @@ def build(conn, out_dir, counts: dict | None = None, seed: int | None = None) ->
                   and o["order_id"] in base["items_by_order"]
                   and o["order_id"] not in natural]
     refund_ids = [r["order_id"] for r in clean_refunds if r["order_id"] not in natural]
+    nonzero_freight = {oid for oid, items in base["items_by_order"].items()
+                       if round(sum(float(i["freight_value"]) for i in items), 2) > 0}
 
     pools = allocate_pools(rng, active_ids, rebill_ids, refund_ids,
-                           orders_index, counts)
+                           orders_index, counts, nonzero_freight_ids=nonzero_freight)
 
     bills = [dict(b) for b in clean_bills]
     dirty_payments = [dict(p) for p in base["payments"]]

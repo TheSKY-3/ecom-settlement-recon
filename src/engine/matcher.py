@@ -8,6 +8,15 @@ from pathlib import Path
 from src.engine.audit import sha256_of
 from src.synth.build_dataset import NATURAL_MISMATCH_SQL
 
+# P0 自然基线的第二口径："有明细、非取消、却没有任何支付记录"的单
+# （P0 盘点 1 单：bfbd0f9b…）。这些单引擎会如实报"删支付"，判分时须归入自然桶。
+NATURAL_NO_PAYMENT_SQL = """
+SELECT o.order_id FROM orders o
+JOIN (SELECT DISTINCT order_id FROM order_items) i ON o.order_id = i.order_id
+LEFT JOIN (SELECT DISTINCT order_id FROM order_payments) p ON o.order_id = p.order_id
+WHERE p.order_id IS NULL AND o.order_status NOT IN ('canceled', 'unavailable')
+"""
+
 
 def _read_csv(path: Path) -> list[dict]:
     if not path.is_file():
@@ -52,7 +61,8 @@ def load_world(synthetic_dir: Path, db_path: Path) -> World:
         items_by_order = _group([dict(r) for r in conn.execute(
             "SELECT order_id, order_item_id, product_id, seller_id, price, freight_value"
             " FROM order_items")], "order_id")
-        natural_ids = {r["order_id"] for r in conn.execute(NATURAL_MISMATCH_SQL)}
+        natural_ids = ({r["order_id"] for r in conn.execute(NATURAL_MISMATCH_SQL)}
+                       | {r["order_id"] for r in conn.execute(NATURAL_NO_PAYMENT_SQL)})
     finally:
         conn.close()
     sources = {}

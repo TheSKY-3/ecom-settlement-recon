@@ -34,7 +34,8 @@ def _write(path, columns, rows):
 def engine_env(tmp_path, monkeypatch):
     """o1 活跃正常；o2 删账单；o3 取消已审批被开账单；o4 取消未审批有支付（应无发现）；
     o5 自然差异（支付≠明细）；o6 取消已审批退款缺失；o7 重复结算；o8 版本差异；
-    o9 费率错误；o10 漏运费；o11 活跃但有退款（不该有的退款）。另加孤儿账单 ORPHAN。"""
+    o9 费率错误；o10 漏运费；o11 活跃但有退款（不该有的退款）；
+    o12 有明细有账单但零支付（P0 自然口径 → 删支付）。另加孤儿账单 ORPHAN。"""
     synth = tmp_path / "synthetic"
     orders = [(f"o{i}", status, approved, "2026-01-01 09:00:00")
               for i, (status, approved) in enumerate([
@@ -43,17 +44,20 @@ def engine_env(tmp_path, monkeypatch):
                   ("delivered", "2026-01-05 10:00:00"), ("unavailable", "2026-01-06 10:00:00"),
                   ("delivered", "2026-01-07 10:00:00"), ("delivered", "2026-01-08 10:00:00"),
                   ("delivered", "2026-01-09 10:00:00"), ("delivered", "2026-01-10 10:00:00"),
-                  ("delivered", "2026-01-11 10:00:00")], start=1)]
-    items = [(f"o{i}", 1, "p1", "s1", 100.0, 10.0) for i in range(1, 12)]
+                  ("delivered", "2026-01-11 10:00:00"), ("delivered", "2026-01-12 10:00:00"),
+              ], start=1)]
+    items = [(f"o{i}", 1, "p1", "s1", 100.0, 10.0) for i in range(1, 13)]
 
     pays = []
-    for i in range(1, 12):
+    for i in range(1, 13):
+        if i == 12:
+            continue                              # o12 零支付 → P0 自然口径
         value = "110.00" if i != 5 else "99.00"   # o5 少付 → 自然差异
         pays.append({"order_id": f"o{i}", "payment_sequential": "1",
                      "payment_type": "credit_card", "payment_installments": "1",
                      "payment_value": value})
 
-    bills = [bill(f"o{i}") for i in (1, 3, 5, 7, 11)]           # o2/o6 无账单；o8/o9/o10 单独给
+    bills = [bill(f"o{i}") for i in (1, 3, 5, 7, 11, 12)]       # o2/o6 无账单；o8/o9/o10 单独给
     bills.append(bill("o7", suffix="_DUP"))                                     # 重复结算
     bills.append(bill("o8", rate="0.15", fee="15.00", settle="95.00"))          # v1 旧费率
     bills.append(dict(bill("o8"), bill_id="B_o8_2", version="2"))               # v2 正确
