@@ -8,8 +8,13 @@
 | 里程碑 | 状态 | 产出 |
 |---|---|---|
 | P0 数据底座 | ✅ 完成 | `data/olist.db`（9 表，177MB）+ [自然差异盘点报告](docs/natural-diff-report.md) |
-| P1 差异注入规范 + BenchRec | ⏳ 未开始 | BenchRec 笔记见 [docs/benchrec-format-notes.md](docs/benchrec-format-notes.md)，数据下载待 Kaggle 凭证 |
-| P2 确定性匹配引擎 | 未开始 | — |
+| P1 评测集冻结 | ✅ 完成 | [注入规范 v1](docs/injection-spec-v1.md) + `data/synthetic/`（干净/脏三本账 + 1,750 条标准答案） |
+| P2 确定性匹配引擎 | ⏳ 未开始 | — |
+| P3 Agent 壳（自研受约束循环 + DeepSeek） | 未开始 | — |
+| P4 全量评测 + BenchRec 跨域 | 未开始 | BenchRec 数据已落位 `data/raw/benchrec/` |
+
+P1 关键数字：冻结考卷 = 六类雷共 **1,750** 颗（单边账 700 / 金额不符 500 / 状态不一致 150 /
+退款遗漏 200 / 重复结算 100 / 版本差异 100），全部带标准答案；造数模块 22 个 pytest 全绿。
 
 P0 关键数字：两侧齐全订单金额一致率 **99.42%**（98089/98665），自然不一致 576 单（多付 367 / 少付 209）；
 单边账自然样本：无明细 775 单、已送达但无支付 1 单；canceled/unavailable 已付 1234 单（269,735 BRL，
