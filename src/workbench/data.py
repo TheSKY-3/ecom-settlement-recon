@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import os
 import sqlite3
 from collections import Counter
@@ -81,9 +82,8 @@ def load_overview() -> dict:
     }
 
 
-def load_diffs(diff_type: str | None, side: str | None, q: str | None,
-               page: int, page_size: int) -> dict:
-    rows = _gt_rows()
+def _filter_page(rows: list[dict], diff_type: str | None, side: str | None,
+                 q: str | None, page: int, page_size: int) -> dict:
     if diff_type:
         rows = [r for r in rows if r["diff_type"] == diff_type]
     if side:
@@ -96,6 +96,32 @@ def load_diffs(diff_type: str | None, side: str | None, q: str | None,
     start = (page - 1) * page_size
     return {"total": total, "page": page, "page_size": page_size,
             "rows": rows[start:start + page_size]}
+
+
+def load_diffs(diff_type: str | None, side: str | None, q: str | None,
+               page: int, page_size: int) -> dict:
+    return _filter_page(_gt_rows(), diff_type, side, q, page, page_size)
+
+
+def _engine_dir() -> Path:
+    return Path(os.environ.get(
+        "RECON_ENGINE_DIR", Path(__file__).resolve().parents[2] / "output" / "engine"))
+
+
+def load_engine_summary() -> dict | None:
+    path = _engine_dir() / "score.json"
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_engine_diffs(diff_type: str | None, side: str | None, q: str | None,
+                      page: int, page_size: int) -> dict | None:
+    path = _engine_dir() / "findings.json"
+    if not path.is_file():
+        return None
+    rows = json.loads(path.read_text(encoding="utf-8"))["findings"]
+    return _filter_page(rows, diff_type, side, q, page, page_size)
 
 
 def _db_query(sql: str, params: tuple) -> list[dict]:
@@ -111,16 +137,27 @@ def _db_query(sql: str, params: tuple) -> list[dict]:
         conn.close()
 
 
-def load_ledger(gt_id: str) -> dict | None:
-    gts = [r for r in _gt_rows() if r["gt_id"] == gt_id]
-    if not gts:
-        return None
-    oid = gts[0]["order_id"]
+def _ledger_sections(oid: str) -> dict:
     return {
-        "gt": gts[0],
         "bills": [r for r in _side_rows("dirty", "platform_bills") if r["order_id"] == oid],
         "payments": [r for r in _side_rows("dirty", "order_payments") if r["order_id"] == oid],
         "refunds": [r for r in _side_rows("dirty", "refunds") if r["order_id"] == oid],
         "orders": _db_query("SELECT * FROM orders WHERE order_id = ?", (oid,)),
         "items": _db_query("SELECT * FROM order_items WHERE order_id = ?", (oid,)),
     }
+
+
+def load_ledger(gt_id: str) -> dict | None:
+    gts = [r for r in _gt_rows() if r["gt_id"] == gt_id]
+    if not gts:
+        return None
+    return {"gt": gts[0], **_ledger_sections(gts[0]["order_id"])}
+
+
+def load_ledger_by_order(order_id: str) -> dict | None:
+    """引擎发现只有订单号；标准答案里可能没有该单（如自然差异），gt 允许为空。"""
+    gts = [r for r in _gt_rows() if r["order_id"] == order_id]
+    sections = _ledger_sections(order_id)
+    if gts == [] and not any(sections.values()):
+        return None
+    return {"gt": gts[0] if gts else None, **sections}

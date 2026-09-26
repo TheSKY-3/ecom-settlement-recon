@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.workbench import data
-from src.workbench.contracts import DiffsPage, LedgerView, Overview
+from src.workbench.contracts import DiffsPage, EnginePage, LedgerView, Overview
 
 app = FastAPI(title="对账工作台", docs_url="/api/docs")
 _STATIC = Path(__file__).resolve().parent / "static"
@@ -37,6 +37,36 @@ def api_ledger(gt_id: str) -> dict:
     if led is None:
         raise HTTPException(status_code=404, detail=f"标准答案里没有 {gt_id}")
     return led
+
+
+@app.get("/api/ledger/order/{order_id}", response_model=LedgerView)
+def api_ledger_by_order(order_id: str) -> dict:
+    led = data.load_ledger_by_order(order_id)
+    if led is None:
+        raise HTTPException(status_code=404, detail=f"任何账本里都没有订单 {order_id}")
+    return led
+
+
+@app.get("/api/engine")
+def api_engine() -> dict:
+    summary = data.load_engine_summary()
+    if summary is None:
+        return {"available": False, "hint": "先跑 scripts/run_engine.py 生成 output/engine/"}
+    return {"available": True, "score": summary}
+
+
+@app.get("/api/engine/findings", response_model=EnginePage)
+def api_engine_findings(
+    type: str | None = Query(None, description="差异类型"),
+    side: str | None = Query(None, description="目标侧：bills/payments/refunds"),
+    q: str | None = Query(None, description="搜订单号或描述"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+) -> dict:
+    page_data = data.load_engine_diffs(type, side, q, page, page_size)
+    if page_data is None:
+        raise HTTPException(status_code=404, detail="引擎尚未运行：先跑 scripts/run_engine.py")
+    return page_data
 
 
 @app.get("/")

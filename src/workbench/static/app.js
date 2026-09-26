@@ -26,7 +26,7 @@ const TYPE_HINT = {
 };
 
 const state = {
-  diffs: { type: "", side: "", q: "", page: 1, pageSize: 50 },
+  diffs: { source: "gt", type: "", side: "", q: "", page: 1, pageSize: 50 },
 };
 
 async function fetchJSON(url) {
@@ -52,21 +52,28 @@ function sideDot(side) {
 function showError(sel, err) {
   const el = $(sel);
   el.hidden = false;
-  el.textContent = "加载失败：" + err.message + "（若是数据文件缺失，请先跑 scripts/build_synthetic.py）";
+  el.textContent = "加载失败：" + err.message + "（若数据未生成：造数跑 scripts/build_synthetic.py，引擎判定跑 scripts/run_engine.py）";
 }
 
 // ── 概览 ─────────────────────────────────────
 async function renderOverview() {
   $("#overview-error").hidden = true;
   try {
-    const ov = await fetchJSON("/api/overview");
+    const [ov, eng] = await Promise.all([
+      fetchJSON("/api/overview"),
+      fetchJSON("/api/engine").catch(() => ({ available: false })),
+    ]);
     $("#seed-badge").textContent = `种子 ${ov.seed}`;
 
     const kpis = [
       { label: "标准答案（考题总数）", value: fmt(ov.gt.total), foot: "六类差异，每颗雷都有唯一归因", cls: "kpi--accent" },
       { label: "干净世界 · 平台账单", value: fmt(ov.clean.bills), foot: `退款 ${fmt(ov.clean.refunds)} · 支付 ${fmt(ov.clean.payments)}` },
       { label: "脏世界 · 平台账单", value: fmt(ov.dirty.bills), foot: `退款 ${fmt(ov.dirty.refunds)} · 支付 ${fmt(ov.dirty.payments)}` },
-      { label: "确定性引擎（P2）", value: "待接入", foot: "接入后此处展示引擎判定结果与得分", cls: "kpi--dim" },
+      eng.available
+        ? { label: "确定性引擎（P2）", value: `${(eng.score.recall * 100).toFixed(1)}%`,
+            foot: `检出 ${fmt(eng.score.tp)}/${fmt(eng.score.gt_total)} · 真误报 ${fmt(eng.score.fp_other)} · 自然差异 ${fmt(eng.score.fp_natural)}`,
+            cls: "kpi--accent" }
+        : { label: "确定性引擎（P2）", value: "待接入", foot: "接入后此处展示引擎判定结果与得分", cls: "kpi--dim" },
     ];
     $("#kpi-grid").innerHTML = kpis.map((k) => `
       <div class="kpi ${k.cls || ""}">
@@ -109,32 +116,45 @@ async function renderOverview() {
   }
 }
 
-// ── 标准答案列表 ─────────────────────────────
+// ── 标准答案列表（数据源可切换：标准答案 / 引擎判定）──
 async function renderDiffs() {
   $("#diffs-error").hidden = true;
-  const { type, side, q, page, pageSize } = state.diffs;
+  const { source, type, side, q, page, pageSize } = state.diffs;
+  const isEngine = source === "engine";
   const params = new URLSearchParams({ page, page_size: pageSize });
   if (type) params.set("type", type);
   if (side) params.set("side", side);
   if (q) params.set("q", q);
 
+  $("#diffs-head").innerHTML = isEngine
+    ? `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>目标侧</th><th>置信度</th><th>描述</th>`
+    : `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>目标侧</th><th>描述</th>`;
+
   try {
-    const body = await fetchJSON("/api/diffs?" + params);
+    const body = await fetchJSON(
+      (isEngine ? "/api/engine/findings" : "/api/diffs") + "?" + params);
     const tbody = $("#diffs-body");
     if (!body.rows.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty">没有符合筛选条件的记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">没有符合筛选条件的记录</td></tr>`;
     } else {
-      tbody.innerHTML = body.rows.map((r) => `
-        <tr class="rowlink" data-gt="${r.gt_id}">
-          <td class="mono">${r.gt_id}</td>
+      tbody.innerHTML = body.rows.map((r) => {
+        const id = r.gt_id || r.finding_id;
+        const conf = isEngine
+          ? `<td class="num">${Math.round(r.confidence * 100)}%</td>` : "";
+        return `
+        <tr class="rowlink" data-gt="${r.gt_id || ""}" data-order="${r.order_id}">
+          <td class="mono">${id}</td>
           <td class="mono cell-id">${r.order_id}</td>
           <td>${badge(r.diff_type)}</td>
           <td>${r.variant}</td>
           <td>${sideDot(r.target_side)}</td>
+          ${conf}
           <td class="cell-desc">${r.description}</td>
-        </tr>`).join("");
+        </tr>`;
+      }).join("");
       tbody.querySelectorAll("tr.rowlink").forEach((tr) => {
-        tr.addEventListener("click", () => openLedger(tr.dataset.gt));
+        tr.addEventListener("click", () =>
+          openLedger(tr.dataset.gt || null, tr.dataset.order));
       });
     }
 
@@ -161,6 +181,10 @@ function wireDiffsControls() {
     typeSel.appendChild(opt);
   });
   typeSel.addEventListener("change", () => { state.diffs.type = typeSel.value; resetDiffsAndRender(); });
+  $("#f-source").addEventListener("change", (e) => {
+    state.diffs.source = e.target.value;
+    resetDiffsAndRender();
+  });
   $("#f-side").addEventListener("change", (e) => { state.diffs.side = e.target.value; resetDiffsAndRender(); });
   let timer = null;
   $("#f-q").addEventListener("input", (e) => {
@@ -198,7 +222,7 @@ function renderLedgerSection(sec, rows, gt) {
   let inner;
   if (rows.length) {
     inner = miniTable(rows);
-  } else if (sec.side && sec.side === gt.target_side) {
+  } else if (gt && sec.side && sec.side === gt.target_side) {
     inner = `<div class="ledger-empty ledger-empty--hit">该订单在此账本无任何记录 —— 这正是这颗雷的位置（${gt.variant}）。</div>`;
   } else {
     inner = `<div class="ledger-empty">无记录</div>`;
@@ -206,17 +230,21 @@ function renderLedgerSection(sec, rows, gt) {
   return `<div class="ledger-sec"><h3>${sec.label} · ${rows.length} 行</h3>${inner}</div>`;
 }
 
-async function openLedger(gtId) {
+async function openLedger(gtId, orderId) {
+  const url = gtId ? `/api/diffs/${gtId}/ledger` : `/api/ledger/order/${orderId}`;
   let led;
   try {
-    led = await fetchJSON(`/api/diffs/${gtId}/ledger`);
+    led = await fetchJSON(url);
   } catch (err) {
     alert("读取证据失败：" + err.message);
     return;
   }
-  $("#ledger-gtid").textContent = led.gt.gt_id;
-  $("#ledger-badge").innerHTML = badge(led.gt.diff_type);
-  $("#ledger-desc").textContent = `${led.gt.description}　·　订单 ${led.gt.order_id}　·　目标侧：${SIDE_LABEL[led.gt.target_side] || led.gt.target_side}`;
+  const label = led.gt ? `${led.gt.gt_id}　·　订单 ${led.gt.order_id}` : `订单 ${orderId}`;
+  $("#ledger-gtid").textContent = label;
+  $("#ledger-badge").innerHTML = led.gt ? badge(led.gt.diff_type) : "";
+  $("#ledger-desc").textContent = led.gt
+    ? `${led.gt.description}　·　目标侧：${SIDE_LABEL[led.gt.target_side] || led.gt.target_side}`
+    : "该订单不在标准答案中 —— 引擎报出的这项差异属于数据自带的问题（自然差异）或待归因项。";
   $("#ledger-body").innerHTML = LEDGER_SECTIONS
     .map((sec) => renderLedgerSection(sec, led[sec.key], led.gt)).join("");
   $("#ledger-modal").hidden = false;

@@ -21,12 +21,30 @@ class DiffsPage(BaseModel):
 
 
 class LedgerView(BaseModel):
-    gt: DiffRow
+    gt: DiffRow | None          # 引擎报出的自然差异不在标准答案里 → gt 为空
     bills: list[dict]
     payments: list[dict]
     refunds: list[dict]
     orders: list[dict]
     items: list[dict]
+
+
+class FindingRow(BaseModel):
+    finding_id: str
+    order_id: str
+    diff_type: str
+    variant: str
+    target_side: str
+    confidence: float
+    description: str
+    verified: bool
+
+
+class EnginePage(BaseModel):
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=200)
+    rows: list[FindingRow]
 
 
 class Overview(BaseModel):

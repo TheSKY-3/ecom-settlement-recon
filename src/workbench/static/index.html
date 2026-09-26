@@ -48,6 +48,13 @@
       <div class="card">
         <div class="filters">
           <label class="field">
+            <span>数据源</span>
+            <select id="f-source">
+              <option value="gt">标准答案</option>
+              <option value="engine">引擎判定</option>
+            </select>
+          </label>
+          <label class="field">
             <span>类型</span>
             <select id="f-type">
               <option value="">全部</option>
@@ -70,7 +77,7 @@
         <div class="table-wrap">
           <table class="table" id="diffs-table">
             <thead>
-              <tr>
+              <tr id="diffs-head">
                 <th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>目标侧</th><th>描述</th>
               </tr>
             </thead>
