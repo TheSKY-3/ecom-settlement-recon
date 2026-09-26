@@ -17,3 +17,4 @@ Thumbs.db
 # 工作台构建产物
 tmp/
 *.exe
+output/
