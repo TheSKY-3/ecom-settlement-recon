@@ -13,11 +13,18 @@ BILL_COLUMNS = ["bill_id", "order_id", "seller_id", "version", "issued_date",
                 "price_amount", "settlement_amount"]
 
 
-def _shift(date_str: str, days: int) -> str | None:
+def shift_date(date_str: str, days: int) -> str | None:
     if not date_str:
         return None
     d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
     return (d + timedelta(days=days)).isoformat()
+
+
+def amounts_from_items(items: list[dict], rate: float = COMMISSION_RATE):
+    price = round(sum(float(i["price"]) for i in items), 2)
+    freight = round(sum(float(i["freight_value"]) for i in items), 2)
+    fee = round(rate * price, 2)
+    return price, freight, fee
 
 
 def generate_bills(orders: list[dict], items_by_order: dict[str, list[dict]],
@@ -30,11 +37,9 @@ def generate_bills(orders: list[dict], items_by_order: dict[str, list[dict]],
         items = items_by_order.get(oid)
         if not items:
             continue
-        price = round(sum(float(i["price"]) for i in items), 2)
-        freight = round(sum(float(i["freight_value"]) for i in items), 2)
-        fee = round(rate * price, 2)
-        issued = (_shift(order.get("order_approved_at") or "", BILL_OFFSET_DAYS)
-                  or _shift(order["order_purchase_timestamp"], BILL_OFFSET_DAYS))
+        price, freight, fee = amounts_from_items(items, rate)
+        issued = (shift_date(order.get("order_approved_at") or "", BILL_OFFSET_DAYS)
+                  or shift_date(order["order_purchase_timestamp"], BILL_OFFSET_DAYS))
         bills.append({
             "bill_id": f"B_{oid}_1",
             "order_id": oid,
