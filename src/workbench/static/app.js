@@ -382,16 +382,32 @@ async function askAgent() {
 }
 
 let currentRef = null;
+const aiAnswerCache = {};   // ref -> 已取得的归因回答，收起再展开不重复请求
 
 async function askLedgerAttribution() {
   if (!currentRef) return;
   const box = $("#ledger-ai-answer");
+  if (!box.hidden) {                     // 已展开 → 再点收起，把空间还给表格
+    box.hidden = true;
+    $("#ledger-ai-btn").textContent = "AI 归因解释";
+    return;
+  }
   box.hidden = false;
+  const cached = aiAnswerCache[currentRef];
+  if (cached) {
+    renderAgentAnswer(box, cached);
+    $("#ledger-ai-btn").textContent = "收起 AI 解释";
+    return;
+  }
   box.textContent = "思考中…";
+  $("#ledger-ai-btn").textContent = "收起 AI 解释";
   try {
-    renderAgentAnswer(box, await fetchJSON(`/api/agent/attribute/${currentRef}`));
+    const ans = await fetchJSON(`/api/agent/attribute/${currentRef}`);
+    aiAnswerCache[currentRef] = ans;
+    renderAgentAnswer(box, ans);
   } catch (err) {
     box.textContent = "归因失败：" + err.message;
+    $("#ledger-ai-btn").textContent = "AI 归因解释";
   }
 }
 
@@ -399,6 +415,7 @@ async function openLedger(gtId, orderId, findingId) {
   currentRef = findingId || gtId || orderId;
   $("#ledger-ai").hidden = !currentRef;
   $("#ledger-ai-answer").hidden = true;
+  $("#ledger-ai-btn").textContent = "AI 归因解释";
   const url = gtId ? `/api/diffs/${gtId}/ledger` : `/api/ledger/order/${orderId}`;
   let led;
   try {
