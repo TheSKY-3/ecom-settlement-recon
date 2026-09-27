@@ -14,7 +14,7 @@ from src.agent import attribute as agent_attribute
 from src.agent import llm
 from src.workbench import data
 from src.workbench.contracts import (
-    AgentAnswer, AskRequest, DiffsPage, EnginePage, LedgerView, Overview)
+    AgentAnswer, AskRequest, DiffsPage, EnginePage, LedgerView, Overview, RowsPage)
 
 app = FastAPI(title="对账工作台", docs_url="/api/docs")
 _STATIC = Path(__file__).resolve().parent / "static"
@@ -88,6 +88,20 @@ def api_agent_ask(body: AskRequest) -> dict:
 @app.get("/api/agent/attribute/{ref}", response_model=AgentAnswer)
 def api_agent_attribute(ref: str) -> dict:
     return agent_attribute.attribute(ref)
+
+
+@app.get("/api/rows/{world}/{book}", response_model=RowsPage)
+def api_rows(
+    world: str,
+    book: str,
+    q: str | None = Query(None, description="任意字段关键词"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+) -> dict:
+    try:
+        return data.load_rows(world, book, q, page, page_size)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/")

@@ -15,6 +15,19 @@ from pathlib import Path
 
 from src.synth.config import SEED
 
+# 账本浏览：world × book 的合法组合与各账本列名（与 data/synthetic/*.csv 表头一致）
+BOOK_FILES = {"platform_bills": "platform_bills",
+              "order_payments": "order_payments",
+              "refunds": "refunds"}
+BOOK_COLUMNS = {
+    "platform_bills": ["bill_id", "order_id", "seller_id", "version", "issued_date",
+                       "commission_rate", "commission_fee", "freight_amount",
+                       "price_amount", "settlement_amount"],
+    "order_payments": ["order_id", "payment_sequential", "payment_type",
+                       "payment_installments", "payment_value"],
+    "refunds": ["refund_id", "order_id", "refund_amount", "refund_date"],
+}
+
 
 def _synthetic_dir() -> Path:
     return Path(os.environ.get(
@@ -139,12 +152,34 @@ def _db_query(sql: str, params: tuple) -> list[dict]:
 
 def _ledger_sections(oid: str) -> dict:
     return {
+        # 标准账本（应有的账）
+        "clean_bills": [r for r in _side_rows("clean", "platform_bills") if r["order_id"] == oid],
+        "clean_payments": [r for r in _side_rows("clean", "order_payments") if r["order_id"] == oid],
+        "clean_refunds": [r for r in _side_rows("clean", "refunds") if r["order_id"] == oid],
+        # 实际账本（埋错后的账）
         "bills": [r for r in _side_rows("dirty", "platform_bills") if r["order_id"] == oid],
         "payments": [r for r in _side_rows("dirty", "order_payments") if r["order_id"] == oid],
         "refunds": [r for r in _side_rows("dirty", "refunds") if r["order_id"] == oid],
+        # 原始记录（订单底座，不分世界）
         "orders": _db_query("SELECT * FROM orders WHERE order_id = ?", (oid,)),
         "items": _db_query("SELECT * FROM order_items WHERE order_id = ?", (oid,)),
     }
+
+
+def load_rows(world: str, book: str, q: str | None, page: int, page_size: int) -> dict:
+    """账本浏览：任一世界任一账本的全字段分页浏览。"""
+    if world not in ("clean", "dirty"):
+        raise ValueError(f"未知账本版本：{world}")
+    if book not in BOOK_FILES:
+        raise ValueError(f"未知账本：{book}")
+    rows = _side_rows(world, BOOK_FILES[book])
+    if q:
+        needle = q.lower()
+        rows = [r for r in rows if any(needle in str(v).lower() for v in r.values())]
+    total = len(rows)
+    start = (page - 1) * page_size
+    return {"total": total, "page": page, "page_size": page_size,
+            "columns": BOOK_COLUMNS[book], "rows": rows[start:start + page_size]}
 
 
 def load_ledger(gt_id: str) -> dict | None:

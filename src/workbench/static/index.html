@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>对账工作台 · 电商多平台结算对账</title>
-  <link rel="stylesheet" href="/static/style.css?v=2">
+  <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
   <header class="topbar">
@@ -17,6 +17,7 @@
       <nav class="tabs" id="tabs">
         <a href="#/overview" data-tab="overview">概览</a>
         <a href="#/diffs" data-tab="diffs">差异明细</a>
+        <a href="#/ledgers" data-tab="ledgers">账本浏览</a>
         <a href="#/about" data-tab="about">关于</a>
       </nav>
       <div class="topbar__meta" id="seed-badge" title="评测集随机种子（冻结，同种子重跑逐字节一致）">评测集批次 —</div>
@@ -105,6 +106,48 @@
       <p class="hint">点任意一行：查看该订单在三本账 + 订单/明细共五处的原始记录。</p>
     </section>
 
+    <!-- 账本浏览 -->
+    <section id="view-ledgers" class="view" hidden>
+      <div class="banner" id="ledgers-error" hidden></div>
+      <div class="card">
+        <div class="filters">
+          <label class="field">
+            <span>账本版本</span>
+            <select id="f-ledger-world">
+              <option value="clean">标准账本</option>
+              <option value="dirty">实际账本</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>账本</span>
+            <select id="f-ledger-book">
+              <option value="platform_bills">平台账单</option>
+              <option value="order_payments">支付流水</option>
+              <option value="refunds">退款流水</option>
+            </select>
+          </label>
+          <label class="field field--grow">
+            <span>搜索</span>
+            <input id="f-ledger-q" type="search" placeholder="订单号 / 金额 / 日期，任意字段关键词…">
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table class="table" id="ledgers-table">
+            <thead><tr id="ledgers-head"></tr></thead>
+            <tbody id="ledgers-body">
+              <tr><td class="empty">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button class="btn" id="rows-prev">上一页</button>
+          <span class="pager__info" id="rows-info">—</span>
+          <button class="btn" id="rows-next">下一页</button>
+        </div>
+      </div>
+      <p class="hint">像翻 Excel 一样通读六本账（标准/实际 × 账单/支付/退款）；点任意一行查看该订单在两个账本版本的逐项对照。</p>
+    </section>
+
     <!-- 关于 -->
     <section id="view-about" class="view" hidden>
       <div class="card">
@@ -169,6 +212,6 @@ Agent 层 P3（本页 AI 问答）attribute(差异) / ask(问题) ← AI 只在�
     </div>
   </div>
 
-  <script src="/static/app.js?v=2"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

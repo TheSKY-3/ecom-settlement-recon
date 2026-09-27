@@ -27,6 +27,17 @@ const TYPE_HINT = {
 
 const state = {
   diffs: { source: "gt", type: "", side: "", q: "", page: 1, pageSize: 50 },
+  ledgers: { world: "clean", book: "platform_bills", q: "", page: 1, pageSize: 50 },
+};
+
+// 账本原始列名 → 中文表头
+const COL_ZH = {
+  bill_id: "账单号", order_id: "订单号", seller_id: "卖家", version: "版本",
+  issued_date: "出具日期", commission_rate: "佣金率", commission_fee: "佣金",
+  freight_amount: "运费", price_amount: "货款", settlement_amount: "结算额",
+  payment_sequential: "笔次", payment_type: "支付方式",
+  payment_installments: "分期", payment_value: "支付金额",
+  refund_id: "退款号", refund_amount: "退款金额", refund_date: "退款日期",
 };
 
 async function fetchJSON(url) {
@@ -76,12 +87,20 @@ async function renderOverview() {
             cls: "kpi--accent" }
         : { label: "确定性引擎（P2）", value: "待接入", foot: "接入后此处展示引擎判定结果与得分", cls: "kpi--dim" },
     ];
-    $("#kpi-grid").innerHTML = kpis.map((k) => `
-      <div class="kpi ${k.cls || ""}">
+    $("#kpi-grid").innerHTML = kpis.map((k, i) => `
+      <div class="kpi ${k.cls || ""}" ${i === 1 || i === 2 ? `data-ledger="${i === 1 ? "clean" : "dirty"}" title="点击翻阅这本账"` : ""}>
         <div class="kpi__label">${k.label}</div>
         <div class="kpi__value">${k.value}</div>
         <div class="kpi__foot">${k.foot}</div>
       </div>`).join("");
+    document.querySelectorAll("#kpi-grid .kpi[data-ledger]").forEach((el) => {
+      el.addEventListener("click", () => {
+        state.ledgers.world = el.dataset.ledger;
+        state.ledgers.book = "platform_bills";
+        state.ledgers.page = 1;
+        location.hash = "#/ledgers";
+      });
+    });
 
     $("#ask-card").hidden = !agent.available;
 
@@ -199,13 +218,86 @@ function wireDiffsControls() {
   $("#next-page").addEventListener("click", () => { state.diffs.page += 1; renderDiffs(); });
 }
 
+// ── 账本浏览（六本账通读）────────────────────────
+async function renderLedgers() {
+  $("#ledgers-error").hidden = true;
+  const { world, book, q, page, pageSize } = state.ledgers;
+  const params = new URLSearchParams({ page, page_size: pageSize });
+  if (q) params.set("q", q);
+  try {
+    const body = await fetchJSON(`/api/rows/${world}/${book}?` + params);
+    $("#ledgers-head").innerHTML =
+      `<th>#</th>` + body.columns.map((c) => `<th>${COL_ZH[c] || c}</th>`).join("");
+    const tbody = $("#ledgers-body");
+    if (!body.rows.length) {
+      tbody.innerHTML = `<tr><td class="empty">没有符合条件的记录</td></tr>`;
+    } else {
+      const start = (body.page - 1) * body.page_size;
+      tbody.innerHTML = body.rows.map((r, i) => `
+        <tr class="rowlink" data-order="${r.order_id || ""}">
+          <td class="mono">${fmt(start + i + 1)}</td>
+          ${body.columns.map((c) => {
+            const v = r[c] === null || r[c] === undefined ? "" : String(r[c]);
+            const cls = /^-?\d+(\.\d+)?$/.test(v) ? "num"
+              : /^B_|^R_|^[0-9a-f]{16,}$/.test(v) ? "mono" : "";
+            return `<td class="${cls}">${v}</td>`;
+          }).join("")}
+        </tr>`).join("");
+      tbody.querySelectorAll("tr.rowlink").forEach((tr) => {
+        if (tr.dataset.order) {
+          tr.addEventListener("click", () => openLedger(null, tr.dataset.order, null));
+        }
+      });
+    }
+    const pages = Math.max(1, Math.ceil(body.total / body.page_size));
+    $("#rows-info").textContent = `第 ${body.page} / ${pages} 页 · 共 ${fmt(body.total)} 行`;
+    $("#rows-prev").disabled = body.page <= 1;
+    $("#rows-next").disabled = body.page >= pages;
+  } catch (err) {
+    showError("#ledgers-error", err);
+  }
+}
+
+function wireLedgersControls() {
+  $("#f-ledger-world").addEventListener("change", (e) => {
+    state.ledgers.world = e.target.value;
+    state.ledgers.page = 1;
+    renderLedgers();
+  });
+  $("#f-ledger-book").addEventListener("change", (e) => {
+    state.ledgers.book = e.target.value;
+    state.ledgers.page = 1;
+    renderLedgers();
+  });
+  let timer = null;
+  $("#f-ledger-q").addEventListener("input", (e) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      state.ledgers.q = e.target.value.trim();
+      state.ledgers.page = 1;
+      renderLedgers();
+    }, 250);
+  });
+  $("#rows-prev").addEventListener("click", () => { state.ledgers.page -= 1; renderLedgers(); });
+  $("#rows-next").addEventListener("click", () => { state.ledgers.page += 1; renderLedgers(); });
+}
+
 // ── 单雷证据弹层 ─────────────────────────────
-const LEDGER_SECTIONS = [
-  { key: "bills", label: "平台账单（实际账本）", side: "bills" },
-  { key: "payments", label: "支付流水（实际账本）", side: "payments" },
-  { key: "refunds", label: "退款流水（实际账本）", side: "refunds" },
-  { key: "orders", label: "订单（原始记录）" },
-  { key: "items", label: "订单明细（原始记录）" },
+const LEDGER_GROUPS = [
+  { title: "标准账本（这个订单应有的账）", secs: [
+    { key: "clean_bills", label: "平台账单" },
+    { key: "clean_payments", label: "支付流水" },
+    { key: "clean_refunds", label: "退款流水" },
+  ]},
+  { title: "实际账本（平台实际给的账）", secs: [
+    { key: "bills", label: "平台账单", side: "bills" },
+    { key: "payments", label: "支付流水", side: "payments" },
+    { key: "refunds", label: "退款流水", side: "refunds" },
+  ]},
+  { title: "原始记录（订单底单）", secs: [
+    { key: "orders", label: "订单" },
+    { key: "items", label: "订单明细" },
+  ]},
 ];
 
 function miniTable(rows) {
@@ -296,8 +388,10 @@ async function openLedger(gtId, orderId, findingId) {
   $("#ledger-desc").textContent = led.gt
     ? `${led.gt.description}　·　所在账本：${SIDE_LABEL[led.gt.target_side] || led.gt.target_side}`
     : "该订单不在标准答案中 —— 引擎报出的这项差异属于数据自带的问题（自然差异）或待归因项。";
-  $("#ledger-body").innerHTML = LEDGER_SECTIONS
-    .map((sec) => renderLedgerSection(sec, led[sec.key], led.gt)).join("");
+  $("#ledger-body").innerHTML = LEDGER_GROUPS
+    .map((g) => `<div class="ledger-group"><h3 class="ledger-group__title">${g.title}</h3>`
+      + g.secs.map((sec) => renderLedgerSection(sec, led[sec.key], led.gt)).join("")
+      + `</div>`).join("");
   $("#ledger-modal").hidden = false;
   document.body.style.overflow = "hidden";
 }
@@ -308,13 +402,14 @@ function closeLedger() {
 }
 
 // ── 路由 ─────────────────────────────────────
-const RENDERERS = { overview: renderOverview, diffs: renderDiffs, about: () => {} };
+const RENDERERS = { overview: renderOverview, diffs: renderDiffs, ledgers: renderLedgers, about: () => {} };
 
 function route() {
   const name = (location.hash.replace(/^#\//, "") || "overview").split("?")[0];
   const valid = RENDERERS[name] ? name : "overview";
   for (const [key, el] of Object.entries({
-    overview: $("#view-overview"), diffs: $("#view-diffs"), about: $("#view-about"),
+    overview: $("#view-overview"), diffs: $("#view-diffs"),
+    ledgers: $("#view-ledgers"), about: $("#view-about"),
   })) {
     el.hidden = key !== valid;
   }
@@ -325,6 +420,7 @@ function route() {
 }
 
 wireDiffsControls();
+wireLedgersControls();
 $("#ask-btn").addEventListener("click", askAgent);
 $("#ask-input").addEventListener("keydown", (e) => { if (e.key === "Enter") askAgent(); });
 $("#ledger-ai-btn").addEventListener("click", askLedgerAttribution);

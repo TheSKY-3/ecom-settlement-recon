@@ -22,11 +22,22 @@ class DiffsPage(BaseModel):
 
 class LedgerView(BaseModel):
     gt: DiffRow | None          # 引擎报出的自然差异不在标准答案里 → gt 为空
-    bills: list[dict]
-    payments: list[dict]
-    refunds: list[dict]
-    orders: list[dict]
-    items: list[dict]
+    clean_bills: list[dict] = []     # 标准账本（应有的账）
+    clean_payments: list[dict] = []
+    clean_refunds: list[dict] = []
+    bills: list[dict] = []           # 实际账本（埋错后的账）
+    payments: list[dict] = []
+    refunds: list[dict] = []
+    orders: list[dict] = []          # 原始记录
+    items: list[dict] = []
+
+
+class RowsPage(BaseModel):
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=200)
+    columns: list[str]
+    rows: list[dict]
 
 
 class FindingRow(BaseModel):
