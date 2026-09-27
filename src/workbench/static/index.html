@@ -16,10 +16,10 @@
       </div>
       <nav class="tabs" id="tabs">
         <a href="#/overview" data-tab="overview">概览</a>
-        <a href="#/diffs" data-tab="diffs">标准答案</a>
+        <a href="#/diffs" data-tab="diffs">差异明细</a>
         <a href="#/about" data-tab="about">关于</a>
       </nav>
-      <div class="topbar__meta" id="seed-badge" title="评测集随机种子（冻结）">种子 —</div>
+      <div class="topbar__meta" id="seed-badge" title="评测集随机种子（冻结，同种子重跑逐字节一致）">评测集批次 —</div>
     </div>
   </header>
 
@@ -31,13 +31,13 @@
 
       <div class="card">
         <div class="card__head">
-          <h2>六类差异分布 <span class="muted">（标准答案 1,750 条的构成，点击条形可跳到对应列表）</span></h2>
+          <h2>六类差异分布 <span class="muted">（埋入的 1,750 个错误按类型分布，点击条形可跳到对应列表）</span></h2>
         </div>
         <div class="bars" id="type-bars"></div>
       </div>
 
       <div class="card">
-        <div class="card__head"><h2>三本账行数 <span class="muted">（干净世界 = 应然；脏世界 = 埋雷后的实然）</span></h2></div>
+        <div class="card__head"><h2>三本账行数 <span class="muted">（标准账本 = 账本应该长这样；实际账本 = 埋入错误后平台实际给你的账）</span></h2></div>
         <div class="table-wrap" id="ledger-counts"></div>
       </div>
 
@@ -71,7 +71,7 @@
             </select>
           </label>
           <label class="field">
-            <span>目标侧</span>
+            <span>所在账本</span>
             <select id="f-side">
               <option value="">全部</option>
               <option value="bills">账单</option>
@@ -88,7 +88,7 @@
           <table class="table" id="diffs-table">
             <thead>
               <tr id="diffs-head">
-                <th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>目标侧</th><th>描述</th>
+                <th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>描述</th>
               </tr>
             </thead>
             <tbody id="diffs-body">
@@ -135,7 +135,7 @@ Agent 层 P3（本页 AI 问答）attribute(差异) / ask(问题) ← AI 只在�
       <div class="card">
         <div class="card__head"><h2>口径与边界</h2></div>
         <ul class="about-list">
-          <li>本页所有数字来自<b>冻结评测集</b>（种子 20260926，同种子重跑逐字节一致）；平台账单与退款流水为按规则卡合成，非真实平台数据。</li>
+          <li>本页所有数字来自<b>冻结评测集</b>（评测集批次 20260926，同批次重跑逐字节一致）；平台账单与退款流水为按规则卡合成，非真实平台数据。</li>
           <li>工作台<b>只读</b>：不写数据、不产生结论；差异判定由确定性引擎给出（P2 已接入：数据源可切"引擎判定"）。</li>
           <li>AI 问答是<b>受约束出口</b>：模型只能用给定证据组织语言，答案中的数字/编号经白名单校验，违规自动降级为确定性文案。</li>
           <li>对外口径：<b>本地原型 + 合成数据评测</b>，不声称真实业务上线效果。</li>

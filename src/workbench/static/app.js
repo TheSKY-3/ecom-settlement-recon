@@ -64,15 +64,15 @@ async function renderOverview() {
       fetchJSON("/api/engine").catch(() => ({ available: false })),
       fetchJSON("/api/agent/status").catch(() => ({ available: false })),
     ]);
-    $("#seed-badge").textContent = `种子 ${ov.seed}`;
+    $("#seed-badge").textContent = `评测集批次 ${ov.seed}`;
 
     const kpis = [
-      { label: "标准答案（考题总数）", value: fmt(ov.gt.total), foot: "六类差异，每颗雷都有唯一归因", cls: "kpi--accent" },
-      { label: "干净世界 · 平台账单", value: fmt(ov.clean.bills), foot: `退款 ${fmt(ov.clean.refunds)} · 支付 ${fmt(ov.clean.payments)}` },
-      { label: "脏世界 · 平台账单", value: fmt(ov.dirty.bills), foot: `退款 ${fmt(ov.dirty.refunds)} · 支付 ${fmt(ov.dirty.payments)}` },
+      { label: "埋入的错误（考题总数）", value: fmt(ov.gt.total), foot: "六类差异，每条都有唯一归因", cls: "kpi--accent" },
+      { label: "标准账本 · 平台账单", value: fmt(ov.clean.bills), foot: `退款 ${fmt(ov.clean.refunds)} · 支付 ${fmt(ov.clean.payments)}` },
+      { label: "实际账本 · 平台账单", value: fmt(ov.dirty.bills), foot: `退款 ${fmt(ov.dirty.refunds)} · 支付 ${fmt(ov.dirty.payments)}` },
       eng.available
         ? { label: "确定性引擎（P2）", value: `${(eng.score.recall * 100).toFixed(1)}%`,
-            foot: `检出 ${fmt(eng.score.tp)}/${fmt(eng.score.gt_total)} · 真误报 ${fmt(eng.score.fp_other)} · 自然差异 ${fmt(eng.score.fp_natural)}`,
+            foot: `检出 ${fmt(eng.score.tp)}/${fmt(eng.score.gt_total)} · 误报 ${fmt(eng.score.fp_other)} · 另报自然差异 ${fmt(eng.score.fp_natural)}`,
             cls: "kpi--accent" }
         : { label: "确定性引擎（P2）", value: "待接入", foot: "接入后此处展示引擎判定结果与得分", cls: "kpi--dim" },
     ];
@@ -108,7 +108,7 @@ async function renderOverview() {
     ];
     $("#ledger-counts").innerHTML = `
       <div class="counts-grid">
-        <div class="counts-head">三本账</div><div class="counts-head">干净世界</div><div class="counts-head">脏世界</div>
+        <div class="counts-head">三本账</div><div class="counts-head">标准账本</div><div class="counts-head">实际账本</div>
         ${rows.map(([k, c, d]) => `
           <div><div class="k">${k}</div></div>
           <div><div class="v">${fmt(c)}</div></div>
@@ -130,8 +130,8 @@ async function renderDiffs() {
   if (q) params.set("q", q);
 
   $("#diffs-head").innerHTML = isEngine
-    ? `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>目标侧</th><th>置信度</th><th>描述</th>`
-    : `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>目标侧</th><th>描述</th>`;
+    ? `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>置信度</th><th>描述</th>`
+    : `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>描述</th>`;
 
   try {
     const body = await fetchJSON(
@@ -201,11 +201,11 @@ function wireDiffsControls() {
 
 // ── 单雷证据弹层 ─────────────────────────────
 const LEDGER_SECTIONS = [
-  { key: "bills", label: "平台账单（脏）", side: "bills" },
-  { key: "payments", label: "支付流水（脏）", side: "payments" },
-  { key: "refunds", label: "退款流水（脏）", side: "refunds" },
-  { key: "orders", label: "订单（底座）" },
-  { key: "items", label: "订单明细（底座）" },
+  { key: "bills", label: "平台账单（实际账本）", side: "bills" },
+  { key: "payments", label: "支付流水（实际账本）", side: "payments" },
+  { key: "refunds", label: "退款流水（实际账本）", side: "refunds" },
+  { key: "orders", label: "订单（原始记录）" },
+  { key: "items", label: "订单明细（原始记录）" },
 ];
 
 function miniTable(rows) {
@@ -227,7 +227,7 @@ function renderLedgerSection(sec, rows, gt) {
   if (rows.length) {
     inner = miniTable(rows);
   } else if (gt && sec.side && sec.side === gt.target_side) {
-    inner = `<div class="ledger-empty ledger-empty--hit">该订单在此账本无任何记录 —— 这正是这颗雷的位置（${gt.variant}）。</div>`;
+    inner = `<div class="ledger-empty ledger-empty--hit">该订单在此账本无任何记录 —— 这正是埋下错误的位置（${gt.variant}）。</div>`;
   } else {
     inner = `<div class="ledger-empty">无记录</div>`;
   }
@@ -294,7 +294,7 @@ async function openLedger(gtId, orderId, findingId) {
   $("#ledger-gtid").textContent = label;
   $("#ledger-badge").innerHTML = led.gt ? badge(led.gt.diff_type) : "";
   $("#ledger-desc").textContent = led.gt
-    ? `${led.gt.description}　·　目标侧：${SIDE_LABEL[led.gt.target_side] || led.gt.target_side}`
+    ? `${led.gt.description}　·　所在账本：${SIDE_LABEL[led.gt.target_side] || led.gt.target_side}`
     : "该订单不在标准答案中 —— 引擎报出的这项差异属于数据自带的问题（自然差异）或待归因项。";
   $("#ledger-body").innerHTML = LEDGER_SECTIONS
     .map((sec) => renderLedgerSection(sec, led[sec.key], led.gt)).join("");
