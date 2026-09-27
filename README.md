@@ -2,6 +2,7 @@
 
 对"平台账单 × 业务订单 × 支付流水"三方数据做确定性核对 + 差异归因的受约束 Agent。
 选题决策、数据三层方案、技术架构与里程碑见 [handoff.md](handoff.md)（唯一事实源，先读它）。
+量化结论看 [评测总报告](docs/reports/evaluation-report.md)；怎么向面试官讲这个项目看 [叙事稿](docs/interview-narrative.md)。
 
 ## 当前状态（2026-09-26）
 
