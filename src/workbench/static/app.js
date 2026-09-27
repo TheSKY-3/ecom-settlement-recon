@@ -30,15 +30,38 @@ const state = {
   ledgers: { world: "clean", book: "platform_bills", q: "", page: 1, pageSize: 50 },
 };
 
-// 账本原始列名 → 中文表头
+// 账本原始列名 → 中文表头（弹层与账本浏览共用；未收录的列原样显示）
 const COL_ZH = {
   bill_id: "账单号", order_id: "订单号", seller_id: "卖家", version: "版本",
   issued_date: "出具日期", commission_rate: "佣金率", commission_fee: "佣金",
   freight_amount: "运费", price_amount: "货款", settlement_amount: "结算额",
-  payment_sequential: "笔次", payment_type: "支付方式",
-  payment_installments: "分期", payment_value: "支付金额",
+  payment_sequential: "支付笔次", payment_type: "支付方式",
+  payment_installments: "分期数", payment_value: "支付金额",
   refund_id: "退款号", refund_amount: "退款金额", refund_date: "退款日期",
+  customer_id: "客户号", order_status: "订单状态",
+  order_purchase_timestamp: "下单时间", order_approved_at: "支付审批时间",
+  order_delivered_carrier_date: "交承运人时间", order_delivered_customer_date: "送达时间",
+  order_estimated_delivery_date: "预计送达", order_item_id: "明细序号",
+  product_id: "商品号", price: "单价", freight_value: "运费",
+  shipping_limit_date: "发货截止",
 };
+
+// 枚举字段的值翻译（支付方式 / 订单状态）
+const VAL_ZH = {
+  payment_type: { credit_card: "信用卡", boleto: "线下缴费单", debit_card: "借记卡",
+                  voucher: "代金券", not_defined: "未定义" },
+  order_status: { created: "已创建", approved: "已支付审批", invoiced: "已开票",
+                  processing: "备货中", shipped: "已发货", delivered: "已送达",
+                  canceled: "已取消", unavailable: "无法配送" },
+};
+
+function zhCol(c) { return COL_ZH[c] || c; }
+function zhVal(col, v) {
+  const table = VAL_ZH[col];
+  if (!table || v === null || v === undefined) return v;
+  const s = String(v);
+  return table[s] !== undefined ? `${table[s]}` : s;
+}
 
 async function fetchJSON(url) {
   const res = await fetch(url);
@@ -227,7 +250,7 @@ async function renderLedgers() {
   try {
     const body = await fetchJSON(`/api/rows/${world}/${book}?` + params);
     $("#ledgers-head").innerHTML =
-      `<th>#</th>` + body.columns.map((c) => `<th>${COL_ZH[c] || c}</th>`).join("");
+      `<th>#</th>` + body.columns.map((c) => `<th>${zhCol(c)}</th>`).join("");
     const tbody = $("#ledgers-body");
     if (!body.rows.length) {
       tbody.innerHTML = `<tr><td class="empty">没有符合条件的记录</td></tr>`;
@@ -237,7 +260,8 @@ async function renderLedgers() {
         <tr class="rowlink" data-order="${r.order_id || ""}">
           <td class="mono">${fmt(start + i + 1)}</td>
           ${body.columns.map((c) => {
-            const v = r[c] === null || r[c] === undefined ? "" : String(r[c]);
+            const raw = zhVal(c, r[c]);
+            const v = raw === null || raw === undefined ? "" : String(raw);
             const cls = /^-?\d+(\.\d+)?$/.test(v) ? "num"
               : /^B_|^R_|^[0-9a-f]{16,}$/.test(v) ? "mono" : "";
             return `<td class="${cls}">${v}</td>`;
@@ -309,8 +333,9 @@ function miniTable(rows) {
     return `<td class="${cls}">${s}</td>`;
   };
   return `<div class="table-wrap"><table class="table">
-    <thead><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr></thead>
-    <tbody>${rows.map((r) => `<tr>${cols.map((c) => cell(r[c])).join("")}</tr>`).join("")}</tbody>
+    <thead><tr>${cols.map((c) => `<th>${zhCol(c)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((r) =>
+      `<tr>${cols.map((c) => cell(zhVal(c, r[c]))).join("")}</tr>`).join("")}</tbody>
   </table></div>`;
 }
 
