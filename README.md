@@ -33,7 +33,7 @@ P4 跨域对比（BenchRec 银行现金对账，32,048 笔银行流水，同一�
 
 P3 关键数字：Agent 壳上线——模型**只许组织语言不许算账**：答案中的每个数字/编号都过
 事实单白名单校验，违规自动降级为确定性模板（真模型实测：缺失信息如实回答"事实单未提供"，
-未出现编造）。无 API key 时全链路降级为模板，82 个 pytest 全程离线。
+未出现编造）。无 API key 时全链路降级为模板，98 个 pytest 全程离线。
 
 P0 关键数字：两侧齐全订单金额一致率 **99.42%**（98089/98665），自然不一致 576 单（多付 367 / 少付 209）；
 单边账自然样本：无明细 775 单、已送达但无支付 1 单；canceled/unavailable 已付 1234 单（269,735 BRL，
@@ -42,9 +42,10 @@ P0 关键数字：两侧齐全订单金额一致率 **99.42%**（98089/98665）�
 ## 对账工作台（本地网页）
 
 双击项目根目录的 **`对账工作台.exe`**（或 `启动对账工作台.bat`）→ 自动启动本机服务并打开浏览器
-（`http://127.0.0.1:8770`，只监听本机）。三个页面：概览（冻结评测集数字 + 六类差异分布）、
-差异列表（1,750 颗雷筛选/搜索/翻页，点行看该订单在五本账的原始记录；**数据源可切换为
-"引擎判定"**——2,325 条引擎发现带置信度，非标准答案订单的弹层会注明属自然差异）、关于（架构与口径）。
+（`http://127.0.0.1:8770`，只监听本机）。四个页面：概览（冻结评测集数字 + 六类差异分布）、
+差异列表（1,750 颗雷筛选/搜索/翻页，点行看该订单在六本账的原始记录；**数据源可切换为
+"引擎判定"**——2,325 条引擎发现带置信度，非标准答案订单的弹层会注明属自然差异）、
+账本浏览（六本账逐本分页检索，点行看同一份证据）、关于（架构与口径）。
 配了 key 时（环境变量 `DEEPSEEK_API_KEY`）概览出现 **AI 问答框**、每条差异弹层出现 **AI 归因解释**按钮——
 受约束出口，答案里的数字必须来自引擎与账本，截图 `docs/assets/workbench-agent.png`。
 关闭服务控制台窗口即退出。exe 只有 7MB，只是启动器——代码与数据都在项目目录，改完刷新浏览器即生效。
@@ -63,6 +64,64 @@ E:/py_anzhuang/python.exe -m venv .venv        # 已有 .venv 可跳过
 （视觉谱系：[shadcn/ui](https://shadcncraft.com) 一脉的低装饰密集数据表 +
 [2026 设计系统盘点](https://www.themasterly.com) 里 Carbon/Polaris 类企业工具风格 +
 [对账类界面参考](https://dribbble.com/search/data-reconciliation)）。
+
+### Docker 启动（无需本机 Python 环境）
+
+```bash
+docker compose up --build     # 首次要下载依赖，几十秒到几分钟（看网络）；之后秒起
+# 浏览器打开 http://127.0.0.1:8770 ，Ctrl+C 停止（或 docker compose down）
+```
+
+镜像只装 Web 层运行时依赖 + 合成评测集，**不含** `data/olist.db`（177MB，由 Kaggle 原始数据构建）：
+证据弹层的"原始记录"会明确提示未加载，其余功能（概览 / 差异明细 / 六本账浏览 / 标准账本对照）正常。
+按需增强，都是"本机先生成、再挂给容器"：
+
+- **原始订单记录**：本机跑 `scripts/build_db.py` 生成 `data/olist.db`，把 `docker-compose.yml` 里
+  注释掉的 `./data/olist.db:/app/data/olist.db:ro` 打开（文件必须已存在，否则 Docker 会建同名目录）。
+- **引擎判定数据源**：本机跑 `scripts/run_engine.py` 生成 `output/engine/`；compose 默认已挂载 `./output`。
+- **AI 问答 / 归因**：`DEEPSEEK_API_KEY=... docker compose up`；没有 key 时自动降级为确定性模板。
+
+### 部署到服务器（一个镜像 = 一个网站）
+
+镜像自包含：服务器只要有 Docker，不需要 Python、源码或本机依赖。本地构建一次，三种带过去的方式选一：
+
+```bash
+# A. 有镜像仓库（可反复更新）
+docker tag ecom-settlement-recon:latest <registry>/<namespace>/recon:latest
+docker push <registry>/<namespace>/recon:latest
+
+# B. 没有仓库：导出再传（镜像 tar 约 60MB）
+docker save -o recon-image.tar ecom-settlement-recon:latest
+scp recon-image.tar user@server:/tmp/ && ssh user@server 'docker load -i /tmp/recon-image.tar'
+
+# C. 服务器上有源码：直接在服务器构建（需要联网装依赖）
+git clone <repo> && cd <repo> && docker compose up -d --build
+```
+
+服务器上运行（没有源码也能跑；`DEEPSEEK_API_KEY` 可省略，没有 key 会自动降级）：
+
+```bash
+docker run -d --name recon-workbench --restart unless-stopped \
+  -p 127.0.0.1:8770:8770 \
+  -e DEEPSEEK_API_KEY=... \
+  ecom-settlement-recon:latest
+```
+
+运行后服务器本机的 `127.0.0.1:8770` 可访问。要对外提供服务，建议端口只绑本机、前面放反向代理
+（Caddy 两行配好自动 HTTPS）：
+
+```caddy
+recon.example.com {
+    reverse_proxy 127.0.0.1:8770
+}
+```
+
+不想上反向代理就 `RECON_BIND=0.0.0.0 docker compose up -d`（或 `-p 0.0.0.0:8770:8770`），
+同时用安全组/防火墙限制来源。注意几点：镜像默认 `linux/amd64`，ARM 服务器要用
+`docker buildx build --platform linux/arm64 -t ... .` 重新构建；镜像里只有合成评测集，
+要"原始记录"需另带 `data/olist.db` 并用 `-v .../olist.db:/app/data/olist.db:ro` 挂载，
+要"引擎判定"需另带 `output/engine/` 挂到 `/app/output`；工作台没有登录鉴权，
+里面是合成数据，别把真实账单放上去裸奔。
 
 ## 本机复现
 
@@ -86,7 +145,7 @@ E:/py_anzhuang/python.exe scripts/natural_diff_inventory.py  # 重新生成 docs
 - `src/agent/` —（P3）受约束 Agent 壳：attribute/ask 两出口、五件套护栏、DeepSeek 薄客户端（密钥只读环境变量）
 - `src/workbench/` — 对账工作台（FastAPI 只读接口 + 静态前端；数据管道本身仍是纯标准库）
 - `launcher/` + `scripts/build_launcher.py` — exe 薄启动器及其构建脚本
-- `src/agent/` —（P3）Agent 壳
+- `Dockerfile` + `docker-compose.yml` — 容器化启动（只带合成评测集，原始订单库按需挂载）
 
 ## 红线（handoff 第 3 节，不可违反）
 

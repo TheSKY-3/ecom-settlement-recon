@@ -150,8 +150,13 @@ def _db_query(sql: str, params: tuple) -> list[dict]:
         conn.close()
 
 
+def _db_available() -> bool:
+    """原始订单库是否存在：Docker 镜像默认只带合成评测集，不带 data/olist.db。"""
+    return _db_path().is_file()
+
+
 def _ledger_sections(oid: str) -> dict:
-    return {
+    sections = {
         # 标准账本（应有的账）
         "clean_bills": [r for r in _side_rows("clean", "platform_bills") if r["order_id"] == oid],
         "clean_payments": [r for r in _side_rows("clean", "order_payments") if r["order_id"] == oid],
@@ -160,10 +165,13 @@ def _ledger_sections(oid: str) -> dict:
         "bills": [r for r in _side_rows("dirty", "platform_bills") if r["order_id"] == oid],
         "payments": [r for r in _side_rows("dirty", "order_payments") if r["order_id"] == oid],
         "refunds": [r for r in _side_rows("dirty", "refunds") if r["order_id"] == oid],
-        # 原始记录（订单底座，不分世界）
-        "orders": _db_query("SELECT * FROM orders WHERE order_id = ?", (oid,)),
-        "items": _db_query("SELECT * FROM order_items WHERE order_id = ?", (oid,)),
     }
+    # 原始记录（订单底座，不分世界）：底座库缺失时留空，由前端提示原因（Docker 镜像即此场景）
+    sections["orders"] = (_db_query("SELECT * FROM orders WHERE order_id = ?", (oid,))
+                          if _db_available() else [])
+    sections["items"] = (_db_query("SELECT * FROM order_items WHERE order_id = ?", (oid,))
+                         if _db_available() else [])
+    return sections
 
 
 def load_rows(world: str, book: str, q: str | None, page: int, page_size: int) -> dict:
@@ -186,7 +194,8 @@ def load_ledger(gt_id: str) -> dict | None:
     gts = [r for r in _gt_rows() if r["gt_id"] == gt_id]
     if not gts:
         return None
-    return {"gt": gts[0], **_ledger_sections(gts[0]["order_id"])}
+    return {"gt": gts[0], "original_available": _db_available(),
+            **_ledger_sections(gts[0]["order_id"])}
 
 
 def load_ledger_by_order(order_id: str) -> dict | None:
@@ -195,4 +204,4 @@ def load_ledger_by_order(order_id: str) -> dict | None:
     sections = _ledger_sections(order_id)
     if gts == [] and not any(sections.values()):
         return None
-    return {"gt": gts[0] if gts else None, **sections}
+    return {"gt": gts[0] if gts else None, "original_available": _db_available(), **sections}

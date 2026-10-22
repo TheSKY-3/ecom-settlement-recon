@@ -17,6 +17,7 @@ def client(env):
 # ── 第一步：弹层对照——ledger 返回带标准账本三段 ────────────────
 def test_ledger_includes_clean_counterpart(env):
     led = wbdata.load_ledger("GT000001")          # o1 删账单雷
+    assert led["original_available"] is True      # 夹具里建了底座库
     assert len(led["clean_bills"]) == 1           # 标准账本里应该有这张账单
     assert led["clean_bills"][0]["bill_id"] == "B_1"
     assert led["bills"] == []                     # 实际账本里被删了
@@ -54,3 +55,20 @@ def test_api_rows_roundtrip(client):
     assert body["total"] == 1 and body["rows"][0]["bill_id"] == "B_1"
     assert client.get("/api/rows/middle/platform_bills").status_code == 400
     assert client.get("/api/rows/clean/nope").status_code == 400
+
+
+# ── 第三步：缺原始订单库（Docker 镜像默认场景）——降级而不报错 ─────
+def test_ledger_without_base_db_degrades(env, monkeypatch, tmp_path):
+    monkeypatch.setenv("RECON_DB_PATH", str(tmp_path / "missing.db"))
+    led = wbdata.load_ledger("GT000001")
+    assert led["original_available"] is False
+    assert led["orders"] == [] and led["items"] == []
+    assert len(led["payments"]) == 1              # 合成账本对照不受影响
+
+
+def test_api_ledger_without_base_db_returns_flag(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("RECON_DB_PATH", str(tmp_path / "missing.db"))
+    r = client.get("/api/diffs/GT000001/ledger")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["original_available"] is False and body["orders"] == []

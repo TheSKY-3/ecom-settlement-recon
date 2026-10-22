@@ -430,10 +430,17 @@ async function openLedger(gtId, orderId, findingId) {
   $("#ledger-desc").textContent = led.gt
     ? `${led.gt.description}　·　所在账本：${SIDE_LABEL[led.gt.target_side] || led.gt.target_side}`
     : "该订单不在标准答案中 —— 引擎报出的这项差异属于数据自带的问题（自然差异）或待归因项。";
-  $("#ledger-body").innerHTML = LEDGER_GROUPS
-    .map((g) => `<div class="ledger-group"><h3 class="ledger-group__title">${g.title}</h3>`
-      + g.secs.map((sec) => renderLedgerSection(sec, led[sec.key], led.gt)).join("")
-      + `</div>`).join("");
+  $("#ledger-body").innerHTML = LEDGER_GROUPS.map((group) => {
+    const isOriginal = group.secs.some((sec) => sec.key === "orders");
+    if (isOriginal && led.original_available === false) {
+      return `<div class="ledger-group"><h3 class="ledger-group__title">${group.title}</h3>`
+        + `<div class="ledger-empty">原始订单库未加载（data/olist.db 不在当前运行环境里，Docker 镜像默认不带）。`
+        + `账本对照不受影响；要看订单底单与明细，请在本机构建底座库后挂载到 /app/data/olist.db（见 README）。</div></div>`;
+    }
+    return `<div class="ledger-group"><h3 class="ledger-group__title">${group.title}</h3>`
+      + group.secs.map((sec) => renderLedgerSection(sec, led[sec.key], led.gt)).join("")
+      + `</div>`;
+  }).join("");
   $("#ledger-modal").hidden = false;
   document.body.style.overflow = "hidden";
 }

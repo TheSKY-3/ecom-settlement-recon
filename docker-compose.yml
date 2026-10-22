@@ -1,0 +1,22 @@
+# Docker Compose v2：docker compose up --build → http://127.0.0.1:8770
+# 镜像是"对账工作台"（只读界面 + 合成评测集）；原始订单库与引擎产物按需挂载。
+# 显式项目名：仓库目录名是中文，Compose 自动推导会得到空名而报错。
+name: ecom-settlement-recon
+services:
+  workbench:
+    build: .
+    image: ecom-settlement-recon:latest
+    container_name: recon-workbench
+    ports:
+      # 默认只绑本机回环（本地原型口径）；服务器上要直接对外：RECON_BIND=0.0.0.0 docker compose up -d
+      - "${RECON_BIND:-127.0.0.1}:8770:8770"
+    environment:
+      # 有 key：概览出现 AI 问答、弹层出现 AI 归因；没有：自动降级为确定性模板
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    volumes:
+      # 本机跑过 scripts/run_engine.py 后，引擎判定数据源自动可见；目录不存在时为空，不影响启动
+      - ./output:/app/output:ro
+      # 可选：本机已构建 data/olist.db 后，取消下一行注释，证据弹层才有"原始记录"。
+      # 注意：文件必须已存在——不存在时 Docker 会创建同名空目录，反而挡住后面的挂载。
+      # - ./data/olist.db:/app/data/olist.db:ro
+    restart: unless-stopped

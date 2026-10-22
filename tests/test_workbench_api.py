@@ -39,8 +39,10 @@ def test_ledger_404_and_200(client):
     assert r.status_code == 200
     body = r.json()
     assert body["gt"]["order_id"] == "o1"
+    assert body["original_available"] is True
     assert set(body) == {"gt", "clean_bills", "clean_payments", "clean_refunds",
-                            "bills", "payments", "refunds", "orders", "items"}
+                            "bills", "payments", "refunds", "orders", "items",
+                            "original_available"}
 
 
 def test_index_served(client):

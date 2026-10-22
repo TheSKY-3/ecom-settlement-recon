@@ -1,7 +1,5 @@
-# 运行时（工作台 Web 层；数据管道仍为纯标准库）
-fastapi>=0.115
-uvicorn>=0.30
-pydantic>=2.7
+# 工作台 Web 层运行时依赖（与 Docker 镜像共用同一份）
+-r requirements-web.txt
 
 # 开发/测试
 pytest>=8.0

@@ -30,6 +30,8 @@ class LedgerView(BaseModel):
     refunds: list[dict] = []
     orders: list[dict] = []          # 原始记录
     items: list[dict] = []
+    # 原始订单库（data/olist.db）是否已加载；Docker 镜像默认不带，前端据此提示原因
+    original_available: bool = True
 
 
 class RowsPage(BaseModel):
