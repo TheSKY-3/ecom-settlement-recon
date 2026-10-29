@@ -1,0 +1,9 @@
+# 工作台 Web 层运行时依赖（与 Docker 镜像共用同一份）
+-r requirements-web.txt
+
+# 开发/测试
+pytest>=8.0
+httpx>=0.27          # fastapi.testclient 依赖
+
+# 打包（仅构建 exe 启动器时需要）
+pyinstaller>=6.10

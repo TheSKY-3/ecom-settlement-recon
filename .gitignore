@@ -1,0 +1,25 @@
+# 数据与构建产物不入库（原始数据与 DB 只在本机）
+data/raw/
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 工作台构建产物
+tmp/
+*.exe
+output/
+
+# 本地内部笔记（不公开）
+private/
+# 个人资料与 PDF 不入库（只留本地）
+*.pdf

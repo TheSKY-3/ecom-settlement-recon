@@ -1,0 +1,26 @@
+# 构建上下文只需要：src/、data/synthetic/、requirements-web.txt、Dockerfile
+.git
+.venv
+.pytest_cache
+**/__pycache__
+**/*.pyc
+
+# 大文件与本地产物
+data/raw
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+output
+tmp
+*.exe
+
+# 与运行时无关的目录
+docs
+tests
+evals
+sql
+scripts
+launcher
+*.md
+.zcodeignore

@@ -1,0 +1,6 @@
+# 工作台运行时最小依赖（Docker 镜像只装这一份；本地 venv 由 requirements.txt 引用）
+fastapi>=0.115
+uvicorn>=0.30
+pydantic>=2.7
+# D016 Excel 导出：纯 Python、MIT、无系统依赖
+openpyxl>=3.1

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>对账工作台 · 电商多平台结算对账</title>
+  <link rel="stylesheet" href="/static/style.css?v=9">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand">
+        <span class="brand__mark">对</span>
+        <span class="brand__name">对账工作台</span>
+        <span class="brand__sub">ecom-settlement-recon</span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <a href="#/chat" data-tab="chat">对话</a>
+        <a href="#/data" data-tab="data">数据</a>
+        <a href="#/about" data-tab="about">关于</a>
+      </nav>
+      <div class="topbar__meta" id="seed-badge" title="评测集随机种子（冻结，同种子重跑逐字节一致）">评测集批次 —</div>
+    </div>
+  </header>
+
+  <div class="datasource" id="datasource" aria-label="数据源清单">
+    <div class="datasource__inner">
+      <span class="datasource__label">数据源</span>
+      <div class="datasource__chips" id="datasource-chips">
+        <span class="datasource__loading">读取表清单…</span>
+      </div>
+      <button class="datasource__more" id="datasource-more" type="button">全部表与字段 →</button>
+    </div>
+  </div>
+
+  <main class="main">
+    <!-- 对话（默认页）：先问数，再按需要去查表/导出 -->
+    <section id="view-chat" class="view view--chat">
+      <div class="chat-page">
+        <div class="chat-page__head">
+          <div class="chat-page__title">
+            <span class="chat-page__logo" aria-hidden="true">◐</span>
+            <div>
+              <h1>对账对话</h1>
+              <p>只读 · 数字逐项回查 · 最多 20 轮 · 可导出 Excel</p>
+            </div>
+          </div>
+          <div class="chat-page__actions">
+            <button class="btn btn--ghost model-btn" id="model-btn" type="button"
+                    title="配置 DeepSeek key：只存在本进程内存里，重启服务后需要重新输入">
+              <span class="model-btn__dot" id="model-dot" aria-hidden="true"></span>
+              <span id="model-label">模型未配置</span>
+            </button>
+            <span class="chat-turns" id="chat-turns">0 / 20 轮</span>
+            <button class="btn btn--ghost" id="chat-new" type="button"
+                    title="清空当前对话，重新开始">新对话</button>
+          </div>
+        </div>
+        <div class="chat-notice" id="chat-notice" hidden></div>
+        <div class="chat-log" id="chat-log" role="log" aria-live="polite"
+             aria-relevant="additions text" aria-label="对话消息"></div>
+        <div class="chat-quick" id="chat-quick" aria-label="预设问题"></div>
+        <div class="chat-suggest" id="chat-suggest" aria-label="下一步建议" hidden></div>
+        <form class="chat-compose" id="chat-form" autocomplete="off">
+          <textarea id="chat-input" rows="2" maxlength="1000"
+                    placeholder="问差异、某类样例、导 Excel、GT/F 编号或 32 位订单号…"
+                    aria-label="输入对账问题"></textarea>
+          <div class="chat-compose__bar">
+            <span class="chat-compose__hint">Enter 发送 · Shift+Enter 换行</span>
+            <button class="btn btn--primary" id="chat-send" type="submit">发送</button>
+          </div>
+        </form>
+        <div class="chat-page__foot">
+          <span>引用可点开账本 · 数字先过白名单校验</span>
+          <span>Excel 由后端确定性生成，不经过模型</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 数据：概览 + 差异明细 + 账本浏览（一张页里切换） -->
+    <section id="view-data" class="view" hidden>
+      <div class="banner" id="data-error" hidden></div>
+
+      <div class="card card--toolbar">
+        <div class="card__head data-head">
+          <div class="seg" id="data-seg" role="tablist" aria-label="数据视图">
+            <button class="seg__btn is-active" id="seg-diffs" data-seg="diffs"
+                    role="tab" aria-selected="true" type="button">差异明细</button>
+            <button class="seg__btn" id="seg-ledgers" data-seg="ledgers"
+                    role="tab" aria-selected="false" type="button">账本浏览</button>
+          </div>
+          <div class="data-head__actions">
+            <button class="btn btn--primary" id="export-btn" type="button"
+                    title="把当前筛选导成 Excel：对照明细 + 订单汇总两个工作表">导出当前结果</button>            <span class="export-note" id="export-note" hidden></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="kpi-grid"></div>
+
+      <div class="card">
+        <div class="card__head">
+          <h2>六类差异分布 <span class="muted">（埋入的 1,750 个错误按类型分布，点击条形跳转到对应列表）</span></h2>
+        </div>
+        <div class="bars" id="type-bars"></div>
+      </div>
+
+      <div class="card">
+        <div class="card__head"><h2>三本账行数 <span class="muted">（标准账本 = 账本应该长这样；实际账本 = 埋入错误后平台实际给你的账）</span></h2></div>
+        <div class="table-wrap" id="ledger-counts"></div>
+      </div>
+
+      <div class="card">
+        <div id="panel-diffs" class="panel">
+          <div class="banner" id="diffs-error" hidden></div>
+          <div class="filters">
+            <label class="field">
+              <span>数据源</span>
+              <select id="f-source">
+                <option value="gt">标准答案</option>
+                <option value="engine">引擎判定</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>类型</span>
+              <select id="f-type">
+                <option value="">全部</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>所在账本</span>
+              <select id="f-side">
+                <option value="">全部</option>
+                <option value="bills">账单</option>
+                <option value="payments">支付</option>
+                <option value="refunds">退款</option>
+              </select>
+            </label>
+            <label class="field field--grow">
+              <span>搜索</span>
+              <input id="f-q" type="search" placeholder="订单号或描述关键词…">
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="diffs-table">
+              <thead>
+                <tr id="diffs-head">
+                  <th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>描述</th>
+                </tr>
+              </thead>
+              <tbody id="diffs-body">
+                <tr><td colspan="6" class="empty">加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button class="btn" id="prev-page">上一页</button>
+            <span class="pager__info" id="page-info">—</span>
+            <button class="btn" id="next-page">下一页</button>
+          </div>
+          <p class="hint">点任意一行：查看该订单在三本账 + 订单/明细共五处的原始记录。「导出当前结果」按当前筛选（数据源/类型/账本/关键词）生成对照表；标准答案与引擎判定可分别导出，对话里可直接要「两者对照」。</p>
+        </div>
+
+        <div id="panel-ledgers" class="panel" hidden>
+          <div class="banner" id="ledgers-error" hidden></div>
+          <div class="filters">
+            <label class="field">
+              <span>账本版本</span>
+              <select id="f-ledger-world">
+                <option value="clean">标准账本</option>
+                <option value="dirty">实际账本</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>账本</span>
+              <select id="f-ledger-book">
+                <option value="platform_bills">平台账单</option>
+                <option value="order_payments">支付流水</option>
+                <option value="refunds">退款流水</option>
+              </select>
+            </label>
+            <label class="field field--grow">
+              <span>搜索</span>
+              <input id="f-ledger-q" type="search" placeholder="订单号 / 金额 / 日期，任意字段关键词…">
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="ledgers-table">
+              <thead><tr id="ledgers-head"></tr></thead>
+              <tbody id="ledgers-body">
+                <tr><td class="empty">加载中…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button class="btn" id="rows-prev">上一页</button>
+            <span class="pager__info" id="rows-info">—</span>
+            <button class="btn" id="rows-next">下一页</button>
+          </div>
+          <p class="hint">像翻 Excel 一样通读六本账（标准/实际 × 账单/支付/退款）；点任意一行查看该订单在两个账本版本的逐项对照。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 关于 -->
+    <section id="view-about" class="view" hidden>
+      <div class="card">
+        <div class="card__head"><h2>四层架构</h2></div>
+        <pre class="arch">数据层（只读）   data/olist.db + data/synthetic/{clean,dirty}/*.csv
+                  │
+引擎层 P2（已完成）  matcher → classifier → verifier → audit ← 召回 100%，真误报 0
+                  │
+Agent 层 P3（已完成） 受限对话：只读工具 + 数字白名单；Excel 导出走确定性生成器
+                  │
+工作台（本页）     FastAPI 只读接口 + 静态页面    ← 只展示、只导出，不产生业务结论</pre>
+      </div>
+      <div class="card">
+        <div class="card__head"><h2>里程碑</h2></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>阶段</th><th>内容</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>P0</td><td>数据底座 + 自然差异盘点（576 单天然不一致）</td><td><span class="pill pill--done">完成</span></td></tr>
+              <tr><td>P1</td><td>评测集冻结：干净/脏三本账 + 1,750 条标准答案</td><td><span class="pill pill--done">完成</span></td></tr>
+              <tr><td>P2</td><td>确定性匹配引擎（无 AI 全量跑通并出分）</td><td><span class="pill pill--done">完成</span></td></tr>
+              <tr><td>P3</td><td>Agent 壳：attribute / ask 两出口，五件套护栏</td><td><span class="pill pill--done">完成</span></td></tr>
+              <tr><td>P4</td><td>全量评测表 + BenchRec 跨域验证（跨域精度 99.67% 超 ChatGPT 基线）</td><td><span class="pill pill--done">完成</span></td></tr>
+              <tr><td>P5</td><td>对话优先工作台：数据清单可问、差异可导 Excel（两张工作表）、规则生成下一步建议</td><td><span class="pill pill--done">完成</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__head"><h2>口径与边界</h2></div>
+        <ul class="about-list">
+          <li>本页所有数字来自<b>冻结评测集</b>（评测集批次 20260926，同批次重跑逐字节一致）；平台账单与退款流水为按规则卡合成，非真实平台数据。</li>
+          <li>工作台<b>只读业务数据</b>：不写账、不做审批；唯一写盘动作是按需生成 xlsx 导出文件（30 分钟后自动过期）。差异判定由确定性引擎给出。</li>
+          <li>AI 多轮对话是<b>受约束出口</b>：模型只能用给定证据组织语言，答案中的数字/编号经白名单校验，违规自动降级为确定性文案；工具执行步骤只展示实际调用，不展示隐藏思维链。</li>
+          <li>对话里的「下一步建议」和预设问题由<b>规则生成</b>，不经过模型；导出内容也由后端确定性拼装，模型只挑筛选条件。</li>
+          <li>对外口径：<b>本地原型 + 合成数据评测</b>，不声称真实业务上线效果。</li>
+          <li>数据来源：Olist 公开数据集（Kaggle <span class="mono">olistbr/brazilian-ecommerce</span>，CC BY-NC-SA 4.0）。不使用任何公司真实账单。</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    ecom-settlement-recon · 本地原型 + 合成数据评测 · 数据只读 · 关闭服务窗口即退出
+  </footer>
+
+  <!-- 模型设置：页面输入 key，只存服务端进程内存 -->
+  <div class="modal" id="model-modal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel modal__panel--narrow">
+      <div class="modal__head">
+        <div>
+          <span class="mono">模型</span>
+          <span id="model-badge" class="pill">—</span>
+        </div>
+        <button class="btn btn--ghost" data-close>关闭 ✕</button>
+      </div>
+      <p class="modal__desc">输入 DeepSeek key 启用 AI 对话（当前只支持 DeepSeek）。key 只保存在本次运行的服务进程内存里，不写文件、不进日志；重启服务后需要重新输入。不填也能用：清单、统计、导出走确定性路线。</p>
+      <form class="model-form" id="model-form" autocomplete="off">
+        <label class="field">
+          <span>DeepSeek API key</span>
+          <input type="password" id="model-key" name="model-key" placeholder="sk-…"
+                 autocomplete="new-password" spellcheck="false" maxlength="200">
+        </label>
+        <div class="model-form__bar">
+          <span class="model-form__hint" id="model-hint">保存前会先用一次最小调用验证</span>
+          <div class="model-form__actions">
+            <button class="btn" id="model-clear" type="button">清除</button>
+            <button class="btn btn--primary" id="model-save" type="submit">保存并测试</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 全部数据表：点数据源条右侧“全部表与字段”打开 -->
+  <div class="modal" id="tables-modal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel">
+      <div class="modal__head">
+        <div>
+          <span class="mono">data/synthetic</span>
+          <span id="tables-badge" class="pill">—</span>
+        </div>
+        <button class="btn btn--ghost" data-close>关闭 ✕</button>
+      </div>
+      <p class="modal__desc">对账涉及的全部文件。输入表是真实对账要读的账，参照表是评测用干净副本，标准答案是考题，产出是引擎结果。</p>
+      <div class="modal__body" id="tables-body"></div>
+    </div>
+  </div>
+
+  <!-- 单雷证据弹层 -->
+  <div class="modal" id="ledger-modal" hidden>
+    <div class="modal__backdrop" data-close></div>
+    <div class="modal__panel">
+      <div class="modal__head">
+        <div>
+          <span class="mono" id="ledger-gtid">—</span>
+          <span id="ledger-badge"></span>
+        </div>
+        <button class="btn btn--ghost" data-close>关闭 ✕</button>
+      </div>
+      <p class="modal__desc" id="ledger-desc"></p>
+      <div class="modal__body" id="ledger-body"></div>
+      <div class="ledger-ai" id="ledger-ai" hidden>
+        <button class="btn" id="ledger-ai-btn">AI 归因解释</button>
+        <div class="ask-answer" id="ledger-ai-answer" hidden></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=15"></script>
+</body>
+</html>
