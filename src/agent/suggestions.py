@@ -8,16 +8,19 @@
 from __future__ import annotations
 
 PRESETS: list[dict] = [
-    {"text": "这批一共多少条差异？",
+    {"text": "这批一共多少条差异？涉案金额多少？",
      "tools": [{"name": "get_overview", "args": {}}]},
     {"text": "这批评测涉及几张表，各有多少行？",
      "tools": [{"name": "get_data_inventory", "args": {}}]},
-    {"text": "六类差异分别有多少条？",
-     "tools": [{"name": "get_overview", "args": {}}]},
+    {"text": "六类差异分别有多少条？哪类涉及金额最大？",
+     "tools": [{"name": "get_type_stats", "args": {}}]},
     {"text": "单边账有几条？举两个例子。",
      "tools": [{"name": "get_type_stats", "args": {}},
                {"name": "search_diffs", "args": {"source": "gt", "diff_type": "单边账",
                                                  "limit": 2}}]},
+    {"text": "涉案金额最大的 5 笔差异是哪些？",
+     "tools": [{"name": "search_diffs", "args": {"source": "gt", "sort": "amount_desc",
+                                                 "limit": 5}}]},
     {"text": "引擎召回率和误报是多少？",
      "tools": [{"name": "get_engine_score", "args": {}}]},
     {"text": "哪类差异的自然差异最多？",

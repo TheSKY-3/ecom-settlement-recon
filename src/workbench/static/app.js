@@ -26,7 +26,7 @@ const TYPE_HINT = {
 };
 
 const state = {
-  diffs: { source: "gt", type: "", side: "", q: "", page: 1, pageSize: 50 },
+  diffs: { source: "gt", type: "", side: "", q: "", sort: "", page: 1, pageSize: 50 },
   ledgers: { world: "clean", book: "platform_bills", q: "", page: 1, pageSize: 50 },
   dataView: "diffs",
   tables: null,
@@ -75,6 +75,9 @@ async function fetchJSON(url, options) {
 }
 
 const fmt = (n) => Number(n).toLocaleString("zh-CN");
+// 涉案金额：巴西公开数据集，币种 BRL；统一两位小数 + 千分位
+const money = (v) => "R$ " + Number(v || 0).toLocaleString("zh-CN",
+  { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function badge(type) {
   const slug = TYPE_SLUG[type] || "unknown";
@@ -102,7 +105,7 @@ async function renderOverview() {
     $("#seed-badge").textContent = `评测集批次 ${ov.seed}`;
 
     const kpis = [
-      { label: "埋入的错误（考题总数）", value: fmt(ov.gt.total), foot: "六类差异，每条都有唯一归因", cls: "kpi--accent" },
+      { label: "埋入的错误（考题总数）", value: fmt(ov.gt.total), foot: `涉案总金额 ${money(ov.gt.total_amount)} · 六类差异各有归因`, cls: "kpi--accent" },
       { label: "标准账本 · 平台账单", value: fmt(ov.clean.bills), foot: `退款 ${fmt(ov.clean.refunds)} · 支付 ${fmt(ov.clean.payments)}` },
       { label: "实际账本 · 平台账单", value: fmt(ov.dirty.bills), foot: `退款 ${fmt(ov.dirty.refunds)} · 支付 ${fmt(ov.dirty.payments)}` },
       eng.available
@@ -111,6 +114,14 @@ async function renderOverview() {
             cls: "kpi--accent" }
         : { label: "确定性引擎（P2）", value: "待接入", foot: "接入后此处展示引擎判定结果与得分", cls: "kpi--dim" },
     ];
+    if (ov.engine_money && ov.engine_money.total_amount != null) {
+      kpis.push({
+        label: "引擎发现涉案金额",
+        value: money(ov.engine_money.total_amount),
+        foot: "含自然差异（数据自带的金额不符）· 按类型分布见下",
+        cls: "kpi--accent",
+      });
+    }
     $("#kpi-grid").innerHTML = kpis.map((k, i) => `
       <div class="kpi ${k.cls || ""}" ${i === 1 || i === 2 ? `data-ledger="${i === 1 ? "clean" : "dirty"}" title="点击翻阅这本账"` : ""}>
         <div class="kpi__label">${k.label}</div>
@@ -127,13 +138,14 @@ async function renderOverview() {
       });
     });
 
+    const amounts = ov.gt.by_type_amount || {};
     const entries = Object.entries(ov.gt.by_type).sort((a, b) => b[1] - a[1]);
     const max = Math.max(...entries.map(([, n]) => n));
     $("#type-bars").innerHTML = entries.map(([type, n]) => `
       <div class="bar-row" data-type="${type}" title="${TYPE_HINT[type] || ""}">
         <span class="bar-row__label">${type}</span>
         <span class="bar-track"><span class="bar-fill" style="width:${(n / max * 100).toFixed(1)}%"></span></span>
-        <span class="bar-row__value">${fmt(n)} 条</span>
+        <span class="bar-row__value">${fmt(n)} 条 · ${money(amounts[type])}</span>
       </div>`).join("");
     document.querySelectorAll("#type-bars .bar-row").forEach((row) => {
       row.addEventListener("click", () => {
@@ -166,7 +178,8 @@ async function renderOverview() {
 // ── 数据页：概览 / 差异 / 账本 一张页里切换 ──────────
 function syncDiffsControls() {
   const map = { "#f-source": state.diffs.source, "#f-type": state.diffs.type,
-                "#f-side": state.diffs.side, "#f-q": state.diffs.q };
+                "#f-side": state.diffs.side, "#f-q": state.diffs.q,
+                "#f-sort": state.diffs.sort };
   for (const [sel, value] of Object.entries(map)) {
     const el = $(sel);
     if (el && el.value !== value) el.value = value;
@@ -203,6 +216,7 @@ function exportFilters() {
   if (state.diffs.type) f.diff_type = state.diffs.type;
   if (state.diffs.side) f.side = state.diffs.side;
   if (state.diffs.q) f.q = state.diffs.q;
+  if (state.diffs.sort) f.sort = state.diffs.sort;
   return f;
 }
 
@@ -368,23 +382,24 @@ async function loadDatasource() {
 // ── 标准答案列表（数据源可切换：标准答案 / 引擎判定）──
 async function renderDiffs() {
   $("#diffs-error").hidden = true;
-  const { source, type, side, q, page, pageSize } = state.diffs;
+  const { source, type, side, q, sort, page, pageSize } = state.diffs;
   const isEngine = source === "engine";
   const params = new URLSearchParams({ page, page_size: pageSize });
   if (type) params.set("type", type);
   if (side) params.set("side", side);
   if (q) params.set("q", q);
+  if (sort) params.set("sort", sort);
 
   $("#diffs-head").innerHTML = isEngine
-    ? `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>置信度</th><th>描述</th>`
-    : `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>描述</th>`;
+    ? `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>置信度</th><th class="num">涉案金额</th><th>描述</th>`
+    : `<th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th class="num">涉案金额</th><th>描述</th>`;
 
   try {
     const body = await fetchJSON(
       (isEngine ? "/api/engine/findings" : "/api/diffs") + "?" + params);
     const tbody = $("#diffs-body");
     if (!body.rows.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty">没有符合筛选条件的记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty">没有符合筛选条件的记录</td></tr>`;
     } else {
       tbody.innerHTML = body.rows.map((r) => {
         const id = r.gt_id || r.finding_id;
@@ -399,6 +414,7 @@ async function renderDiffs() {
           <td>${r.variant}</td>
           <td>${sideDot(r.target_side)}</td>
           ${conf}
+          <td class="num">${money(r.amount)}</td>
           <td class="cell-desc">${r.description}</td>
         </tr>`;
       }).join("");
@@ -437,6 +453,7 @@ function wireDiffsControls() {
     resetDiffsAndRender();
   });
   $("#f-side").addEventListener("change", (e) => { state.diffs.side = e.target.value; resetDiffsAndRender(); });
+  $("#f-sort").addEventListener("change", (e) => { state.diffs.sort = e.target.value; resetDiffsAndRender(); });
   let timer = null;
   $("#f-q").addEventListener("input", (e) => {
     clearTimeout(timer);

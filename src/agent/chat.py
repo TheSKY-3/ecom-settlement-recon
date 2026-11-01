@@ -48,6 +48,10 @@ ACTIVITY_TTL_S = 5 * 60
 _INVENTORY_RE = re.compile(
     r"(数据清单|表清单|几张表|几份表|多少张表|多少份表|各有多少行|哪些表|数据源|几张数据表)")
 _EXPORT_RE = re.compile(r"(导出|导成|导一份|导个|下载|excel|xlsx|对照表)", re.IGNORECASE)
+# "金额最大的 N 笔 / 涉案金额最多 / 金额排行"——无 key 时也能确定性直答
+_AMOUNT_TOP_RE = re.compile(r"(?:金额|涉案|钱)[^。？?]{0,8}(?:最大|最多|排行|top)"
+                            r"|(?:最大|最多)[^。？?]{0,4}(?:差异|几笔)",
+                            re.IGNORECASE)
 _FOLLOWUP_RE = re.compile(r"(第一条|上一条|前一条|刚才(?:那|查|看|说|的))")
 _EXPORT_URL_RE = re.compile(r"(?:https?://\S+)?/api/exports/[0-9a-zA-Z_-]+")
 _DOWNLOAD_LABEL_RE = re.compile(r"下载链接\s*[:：]?\s*")
@@ -110,6 +114,7 @@ class SearchDiffsArgs(BaseModel):
     side: Literal["bills", "payments", "refunds"] | None = None
     q: str | None = Field(default=None, max_length=64)
     limit: int = Field(default=5, ge=1, le=10)
+    sort: Literal["amount_desc"] | None = None
     # 以下三个过滤只对 source=engine 有效（GT 侧没有置信度/复核/自然差异概念）。
     min_confidence: float | None = Field(default=None, ge=0, le=1)
     max_confidence: float | None = Field(default=None, ge=0, le=1)
@@ -134,11 +139,11 @@ def _tool(name: str, description: str, model: type[BaseModel]) -> dict:
 
 
 TOOL_SCHEMAS = [
-    _tool("get_overview", "读取批次概览：三本账行数、标准答案总数、六类差异数量与占比、引擎成绩。",
+    _tool("get_overview", "读取批次概览：三本账行数、标准答案总数与涉案总金额、六类差异数量/占比/金额、引擎成绩。",
           _EmptyArgs),
-    _tool("search_diffs", "按来源/差异类型/账本/关键词搜索差异，最多返回 10 条；结果只给 total/returned/rows。source=engine 时可加 min_confidence/max_confidence/verified/natural_only 过滤（natural_only=true 只看自然差异，也就是引擎误报）。",
+    _tool("search_diffs", "按来源/差异类型/账本/关键词搜索差异，最多返回 10 条；结果只给 total/returned/rows。sort=\"amount_desc\" 按涉案金额从大到小排（回答“金额最大的 N 笔”必用）。source=engine 时可加 min_confidence/max_confidence/verified/natural_only 过滤（natural_only=true 只看自然差异，也就是引擎误报）。",
           SearchDiffsArgs),
-    _tool("get_type_stats", "按差异类型与账本聚合：每类标准答案数、引擎发现数、命中/漏检/误报、自然差异条数、召回率，以及两种精确率（precision 含自然差异；precision_other 剔除自然差异）。回答“哪类误报最多/精确率最低/自然差异占多少”时用它。",
+    _tool("get_type_stats", "按差异类型与账本聚合：每类标准答案数、引擎发现数、命中/漏检/误报、自然差异条数、召回率、两种精确率（precision 含自然差异；precision_other 剔除自然差异），以及每类涉案金额（gt_amount 考卷口径 / finding_amount 引擎口径）。回答“哪类误报最多/精确率最低/自然差异占多少/哪类涉及金额最大”时用它。",
           _EmptyArgs),
     _tool("get_diff", "按 GT 编号或引擎发现 F 编号读取一条差异的五段账本证据。",
           GetDiffArgs),
@@ -187,14 +192,17 @@ def build_overview_facts() -> dict:
         "dirty": ov.get("dirty") or {},
         "order_id_len": guardrails.ORDER_ID_LEN,
         "gt": {"total": total, "by_type": by_type, "by_side": by_side,
-               "shares": shares, "share_pct": share_pct},
+               "shares": shares, "share_pct": share_pct,
+               "total_amount": gt.get("total_amount"),
+               "by_type_amount": gt.get("by_type_amount") or {}},
+        "engine_money": ov.get("engine_money"),
         "engine": _score_summary(),
     }
 
 
 def _strip_finding(row: dict) -> dict:
     keys = ("finding_id", "order_id", "diff_type", "variant", "target_side",
-            "confidence", "description", "verified")
+            "confidence", "description", "amount", "verified")
     return {k: row[k] for k in keys if k in row}
 
 
@@ -208,9 +216,9 @@ def _engine_findings(order_id: str, limit: int = 10) -> list[dict]:
 class ChatTools:
     """白名单只读工具执行器；返回（事实 JSON, 给用户看的工具轨迹）。"""
 
-    _FILTER_KEYS = ("source", "diff_type", "side", "q", "min_confidence",
+    _FILTER_KEYS = ("source", "diff_type", "side", "q", "sort", "min_confidence",
                     "max_confidence", "verified", "natural_only")
-    _EXPORT_FILTER_KEYS = ("diff_type", "side", "q", "min_confidence",
+    _EXPORT_FILTER_KEYS = ("diff_type", "side", "q", "sort", "min_confidence",
                            "max_confidence", "verified", "natural_only")
 
     @staticmethod
@@ -258,13 +266,15 @@ class ChatTools:
                                  "message": "min_confidence/max_confidence/verified/"
                                             "natural_only 只对 source=engine 有效"},
                                 "搜索差异：过滤参数与来源不匹配")
-                    page = data.load_diffs(args.diff_type, args.side, args.q, 1, args.limit)
+                    page = data.load_diffs(args.diff_type, args.side, args.q, 1,
+                                           args.limit, sort=args.sort)
                 else:
                     page = data.load_engine_diffs(
                         args.diff_type, args.side, args.q, 1, args.limit,
                         min_confidence=args.min_confidence,
                         max_confidence=args.max_confidence,
-                        verified=args.verified, natural_only=args.natural_only)
+                        verified=args.verified, natural_only=args.natural_only,
+                        sort=args.sort)
                 if page is None:
                     return ({"kind": "diffs", "source": args.source, "available": False,
                              "total": 0, "rows": []},
@@ -280,10 +290,13 @@ class ChatTools:
                     "max_confidence": args.max_confidence,
                     "verified": args.verified,
                     "natural_only": args.natural_only or None,
+                    "sort": args.sort,
                 }.items() if v is not None}
                 if applied:
                     out["filters"] = applied
                 filters = []
+                if args.sort:
+                    filters.append("按金额从大到小")
                 if args.min_confidence is not None:
                     filters.append(f"置信度≥{args.min_confidence}")
                 if args.max_confidence is not None:
@@ -590,6 +603,24 @@ class ChatEngine:
             answer += "点顶栏「全部表与字段」可看每份表的列名与行数。"
             return answer, [out]
 
+        if _AMOUNT_TOP_RE.search(message):
+            n = 5
+            m = re.search(r"(\d{1,2})\s*笔", message)
+            if m:
+                n = max(1, min(int(m.group(1)), 10))
+            out, _line = self.tools.execute(
+                "search_diffs", {"source": "gt", "sort": "amount_desc", "limit": n},
+                session=session)
+            rows = out.get("rows") or []
+            if out.get("error") or not rows:
+                return None
+            lines = [f"- {r['gt_id']}（{r['diff_type']}）："
+                     f"R$ {float(r.get('amount') or 0):,.2f}，{r['description']}"
+                     for r in rows]
+            answer = (f"涉案金额最大的 {len(lines)} 笔（标准答案口径，从大到小）：\n"
+                      + "\n".join(lines))
+            return answer, [out]
+
         if _EXPORT_RE.search(message):
             prior = next((f for f in reversed(facts)
                           if isinstance(f, dict) and f.get("kind") == "export"
@@ -714,7 +745,8 @@ class ChatEngine:
                 # 通过就采用，不通过再降级。这样不牺牲“数字必须可追溯”。
                 content = (resp.get("content") or "").strip()
                 if content:
-                    return ChatAnswerDraft(answer=content, refs=[]), call_no, facts, trace
+                    return (ChatAnswerDraft(answer=content.replace("\\n", "\n"),
+                                            refs=[]), call_no, facts, trace)
                 raise ChatError("MODEL_OUTPUT_INVALID", "empty response")
             if len(calls) > MAX_CALLS_PER_ROUND:
                 raise ChatError("MODEL_OUTPUT_INVALID",
@@ -748,6 +780,8 @@ class ChatEngine:
                     draft = ChatAnswerDraft.model_validate_json(args)
                 except (ValidationError, ValueError) as e:
                     raise ChatError("BAD_ANSWER_SCHEMA", str(e)[:160]) from None
+                # 模型偶尔把换行写成字面 \n 两个字符；转成真换行再送白名单校验。
+                draft.answer = draft.answer.replace("\\n", "\n")
                 step = {
                     "index": len(steps) + 1,
                     "kind": "submit",

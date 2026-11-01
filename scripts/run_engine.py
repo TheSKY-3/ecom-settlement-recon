@@ -21,7 +21,7 @@ from src.engine.matcher import load_world            # noqa: E402
 from src.engine.verifier import verify               # noqa: E402
 
 FINDING_COLUMNS = ["finding_id", "order_id", "diff_type", "variant", "target_side",
-                   "confidence", "description", "verified"]
+                   "confidence", "description", "amount", "verified"]
 
 
 def _write_report(result: dict, audit: dict, report_path: Path) -> None:
@@ -40,6 +40,8 @@ def _write_report(result: dict, audit: dict, report_path: Path) -> None:
          f"其他 {result['fp_other']}） |"),
         f"| 检出率 recall | {result['recall']} |",
         f"| 精确率 precision（对 FP-其他口径） | {result['precision_other']} |",
+        (f"| 金额一致性（考卷 v1.2） | {result['amount_consistency']['match']}"
+         f"/{result['amount_consistency']['checked']} |" if result.get("amount_consistency") else ""),
         "",
         "| 差异类型 | 标准答案 | 检出 | 漏检 | 误报 | 检出率 |", "|---|---|---|---|---|---|",
     ]

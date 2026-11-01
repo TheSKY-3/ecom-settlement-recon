@@ -32,15 +32,16 @@ SUMMARY_SHEET = "订单汇总"
 
 DETAIL_HEADERS = [
     "标准答案编号", "引擎发现编号", "订单号", "差异类型", "变体", "所在账本",
-    "匹配状态", "标准答案描述", "引擎描述", "置信度", "复核状态",
+    "匹配状态", "标准答案描述", "引擎描述", "置信度", "复核状态", "涉案金额",
     "账单笔数", "账单结算额", "支付笔数", "支付额", "退款笔数", "退款额", "差异备注",
 ]
 SUMMARY_HEADERS = [
-    "订单号", "差异条数", "差异类型", "标准答案条数", "引擎发现条数", "最高置信度",
+    "订单号", "差异条数", "差异类型", "涉案金额", "标准答案条数", "引擎发现条数",
+    "最高置信度",
     "账单笔数", "账单结算额", "支付笔数", "支付额", "退款笔数", "退款额", "明细编号",
 ]
 
-MONEY_COLUMNS = {"账单结算额", "支付额", "退款额"}
+MONEY_COLUMNS = {"涉案金额", "账单结算额", "支付额", "退款额"}
 INT_COLUMNS = {"账单笔数", "支付笔数", "退款笔数", "差异条数", "标准答案条数", "引擎发现条数"}
 CONF_COLUMNS = {"置信度", "最高置信度"}
 
@@ -48,9 +49,9 @@ CONF_COLUMNS = {"置信度", "最高置信度"}
 COL_WIDTH = {
     "标准答案编号": 13, "引擎发现编号": 12, "订单号": 34, "差异类型": 11,
     "变体": 16, "所在账本": 9, "匹配状态": 22, "标准答案描述": 44,
-    "引擎描述": 44, "置信度": 8, "复核状态": 9, "差异备注": 30,
+    "引擎描述": 44, "置信度": 8, "复核状态": 9, "涉案金额": 11, "差异备注": 30,
     "差异条数": 9, "标准答案条数": 11, "引擎发现条数": 11, "最高置信度": 10,
-    "明细编号": 26, "差异类型": 18,
+    "明细编号": 26,
 }
 
 
@@ -70,6 +71,7 @@ class ExportRequest(BaseModel):
                         "重复结算", "版本差异"] | None = None
     side: Literal["bills", "payments", "refunds"] | None = None
     q: str | None = Field(default=None, max_length=64)
+    sort: Literal["amount_desc"] | None = None
     # 以下过滤只看引擎发现：标准答案没有置信度/复核/自然差异概念
     min_confidence: float | None = Field(default=None, ge=0, le=1)
     max_confidence: float | None = Field(default=None, ge=0, le=1)
@@ -227,6 +229,9 @@ def _build_detail_rows(args: ExportRequest) -> tuple[list[dict], dict]:
             "引擎描述": finding["description"] if finding else "",
             "置信度": float(finding["confidence"]) if finding else None,
             "复核状态": ("已复核" if finding.get("verified") else "未复核") if finding else "",
+            # 涉案金额：优先标准答案口径（注入时记录），自然差异只有引擎口径；
+            # 两者经判分器逐条对账一致（见 score.json 的 amount_consistency）
+            "涉案金额": _money((gt or finding).get("amount")),
             "账单笔数": evidence["账单笔数"],
             "账单结算额": evidence["账单结算额"],
             "支付笔数": evidence["支付笔数"],
@@ -249,6 +254,10 @@ def _build_detail_rows(args: ExportRequest) -> tuple[list[dict], dict]:
         for gt in _filter_gt(gt_rows, args):
             if _key(gt) not in find_map:
                 rows.append(pair_row(gt, None))
+    if args.sort:
+        if args.sort != "amount_desc":
+            raise ExportError("INVALID_ARGS", f"未知排序：{args.sort}（支持 amount_desc）")
+        rows.sort(key=lambda r: r["涉案金额"] or 0, reverse=True)
     return rows, index
 
 
@@ -267,6 +276,7 @@ def _build_summary_rows(rows: list[dict], index: dict) -> list[dict]:
             "订单号": order_id,
             "差异条数": len(group),
             "差异类型": "、".join(types),
+            "涉案金额": _money(sum(r["涉案金额"] or 0 for r in group)),
             "标准答案条数": sum(1 for r in group if r["标准答案编号"]),
             "引擎发现条数": sum(1 for r in group if r["引擎发现编号"]),
             "最高置信度": max(confs) if confs else None,

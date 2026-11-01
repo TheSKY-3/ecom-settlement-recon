@@ -42,8 +42,9 @@ def api_diffs(
     q: str | None = Query(None, description="搜订单号或描述"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    sort: str | None = Query(None, description="排序：amount_desc=涉案金额从大到小"),
 ) -> dict:
-    return data.load_diffs(type, side, q, page, page_size)
+    return data.load_diffs(type, side, q, page, page_size, sort=sort)
 
 
 @app.get("/api/diffs/{gt_id}/ledger", response_model=LedgerView)
@@ -77,8 +78,9 @@ def api_engine_findings(
     q: str | None = Query(None, description="搜订单号或描述"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    sort: str | None = Query(None, description="排序：amount_desc=涉案金额从大到小"),
 ) -> dict:
-    page_data = data.load_engine_diffs(type, side, q, page, page_size)
+    page_data = data.load_engine_diffs(type, side, q, page, page_size, sort=sort)
     if page_data is None:
         raise HTTPException(status_code=404, detail="引擎尚未运行：先跑 scripts/run_engine.py")
     return page_data

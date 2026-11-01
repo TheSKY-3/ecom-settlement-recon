@@ -10,7 +10,9 @@ import json
 SYSTEM_PROMPT = (
     "你是对账助手。你只能使用用户消息中 JSON 事实单里的信息回答；"
     "不得引入事实单之外的任何数字或编号（含订单号、金额、日期、数量）；"
-    "不得自己计算新的数字；事实单里没有的信息就说'事实单中未提供'。"
+    "不得自己计算新的数字（金额相加/比较除外，且结果必须与事实单中的金额一致）；"
+    "事实单里没有的信息就说'事实单中未提供'。"
+    "金额（amount 字段）按事实单原样引用，可加千分位，不要换算成万/千等单位。"
     "用简洁的中文面向财务同学回答，不超过 150 字。"
 )
 
@@ -36,6 +38,9 @@ def attribute_fallback(facts: dict) -> str:
     parts = []
     f = facts.get("finding")
     g = facts.get("gt")
+    amount = (f or {}).get("amount") if f else None
+    if amount is None and g:
+        amount = g.get("amount")
     if f:
         parts.append(f"差异 {f['finding_id']}：{f['description']}"
                      f"（{f['diff_type']} / {f['variant']}，"
@@ -43,6 +48,11 @@ def attribute_fallback(facts: dict) -> str:
     elif g:
         parts.append(f"标准答案 {g['gt_id']}：{g['description']}"
                      f"（{g['diff_type']} / {g['variant']}）")
+    if amount not in (None, ""):
+        try:
+            parts.append(f"涉案金额 {float(amount):,.2f}")
+        except (TypeError, ValueError):
+            pass
     oid = facts.get("order_id")
     if oid:
         parts.append(f"订单 {oid}：平台账单 {len(facts.get('bills', []))} 行、"

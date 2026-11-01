@@ -1,11 +1,13 @@
 import csv
+import json
 import sqlite3
 
 import pytest
 
 from src.workbench import data as wbdata
 
-GT_COLUMNS = ["gt_id", "order_id", "diff_type", "variant", "target_side", "description"]
+GT_COLUMNS = ["gt_id", "order_id", "diff_type", "variant", "target_side",
+              "description", "amount"]
 
 
 def _write_csv(path, columns, rows):
@@ -14,6 +16,15 @@ def _write_csv(path, columns, rows):
         w = csv.DictWriter(f, fieldnames=columns)
         w.writeheader()
         w.writerows(rows)
+
+
+def _rewrite_gt_with_amounts(synth, amounts: dict[str, str]) -> None:
+    """给 env 夹具的 GT 补 amount 列（考卷 v1.2 形态），其余行原样保留。"""
+    gt_path = synth / "dirty" / "ground_truth.csv"
+    rows = list(csv.DictReader(open(gt_path, encoding="utf-8")))
+    for r in rows:
+        r["amount"] = amounts[r["gt_id"]]
+    _write_csv(gt_path, GT_COLUMNS, rows)
 
 
 @pytest.fixture()
@@ -106,3 +117,40 @@ def test_missing_data_dir_gives_clear_error(monkeypatch, tmp_path):
     with pytest.raises(FileNotFoundError) as e:
         wbdata.load_overview()
     assert "scripts/build_synthetic.py" in str(e.value)
+
+
+def test_overview_money_and_engine_money_degradation(env, tmp_path, monkeypatch):
+    """考卷 v1.2：概览带涉案金额汇总；引擎结果未生成时 engine_money 优雅降级。"""
+    monkeypatch.setenv("RECON_ENGINE_DIR", str(tmp_path / "no_engine"))
+    _rewrite_gt_with_amounts(env, {"GT000001": "13.00", "GT000002": "1.00",
+                                   "GT000003": "7.00", "GT000004": "2.50"})
+    ov = wbdata.load_overview()
+    assert ov["gt"]["total_amount"] == 23.50
+    assert ov["gt"]["by_type_amount"] == {"单边账": 15.50, "金额不符": 1.00,
+                                          "退款遗漏": 7.00}
+    assert ov["engine_money"] is None
+
+
+def test_overview_engine_money_from_findings(env, tmp_path, monkeypatch):
+    _rewrite_gt_with_amounts(env, {"GT000001": "13.00", "GT000002": "1.00",
+                                   "GT000003": "7.00", "GT000004": "2.50"})
+    engine = tmp_path / "engine"
+    engine.mkdir()
+    findings = [{"order_id": "o9", "diff_type": "金额不符", "amount": 11.0},
+                {"order_id": "o2", "diff_type": "单边账", "amount": 90.0}]
+    (engine / "findings.json").write_text(
+        json.dumps({"audit": {}, "findings": findings}), encoding="utf-8")
+    monkeypatch.setenv("RECON_ENGINE_DIR", str(engine))
+    ov = wbdata.load_overview()
+    assert ov["engine_money"] == {"total_amount": 101.0,
+                                  "by_type_amount": {"金额不符": 11.0, "单边账": 90.0}}
+
+
+def test_diffs_sort_by_amount(env):
+    _rewrite_gt_with_amounts(env, {"GT000001": "13.00", "GT000002": "1.00",
+                                   "GT000003": "7.00", "GT000004": "2.50"})
+    page = wbdata.load_diffs(None, None, None, 1, 50, sort="amount_desc")
+    assert [r["gt_id"] for r in page["rows"]] == [
+        "GT000001", "GT000003", "GT000004", "GT000002"]
+    with pytest.raises(ValueError):
+        wbdata.load_diffs(None, None, None, 1, 50, sort="bogus")

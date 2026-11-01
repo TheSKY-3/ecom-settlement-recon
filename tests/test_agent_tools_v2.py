@@ -10,14 +10,18 @@ from tests.test_workbench_data import env  # noqa: F401  数据夹具
 
 FINDINGS = [
     {"finding_id": "F000001", "order_id": "o2", "diff_type": "单边账", "variant": "删账单",
-     "target_side": "bills", "confidence": 1.0, "description": "账单缺失", "verified": True},
+     "target_side": "bills", "confidence": 1.0, "description": "账单缺失",
+     "amount": 90.0, "verified": True},
     {"finding_id": "F000002", "order_id": "o3", "diff_type": "金额不符", "variant": "费率错误",
-     "target_side": "bills", "confidence": 1.0, "description": "佣金费率错误", "verified": True},
+     "target_side": "bills", "confidence": 1.0, "description": "佣金费率错误",
+     "amount": 10.0, "verified": True},
     # o9 不在 GT 里：模拟自然差异（订单本身金额就不一致，不是引擎判错）
     {"finding_id": "F000003", "order_id": "o9", "diff_type": "金额不符", "variant": "自然差异",
-     "target_side": "refunds", "confidence": 0.9, "description": "金额不一致", "verified": True},
+     "target_side": "refunds", "confidence": 0.9, "description": "金额不一致",
+     "amount": 11.0, "verified": True},
     {"finding_id": "F000004", "order_id": "o2", "diff_type": "金额不符", "variant": "费率错误",
-     "target_side": "payments", "confidence": 0.9, "description": "佣金费率错误", "verified": False},
+     "target_side": "payments", "confidence": 0.9, "description": "佣金费率错误",
+     "amount": 5.0, "verified": False},
 ]
 SCORE = {"gt_total": 4, "finding_total": 4, "tp": 2, "fn": 2, "fp": 2,
          "fp_natural": 1, "fp_other": 1, "recall": 0.5, "precision_other": 0.6667,
@@ -81,9 +85,16 @@ def test_type_stats_aggregates_by_type(rich_env):
     assert refund["findings"] == 0 and refund["fn"] == 1
     assert refund["precision"] is None            # 没报过，不给假数字
 
+    # 涉案金额：finding_amount 来自引擎复算；GT 夹具无金额列 → gt_amount 按 0 汇总
+    assert single["finding_amount"] == 90.0
+    assert amount["finding_amount"] == 26.0       # 10 + 11（自然差异）+ 5
+    assert out["totals"]["finding_amount"] == 116.0
+    assert out["totals"]["gt_amount"] == 0.0
+
     assert out["totals"] == {"gt": 4, "findings": 4, "tp": 2, "fn": 2, "fp": 2,
                              "fp_natural": 1, "fp_other": 1, "recall": 0.5,
-                             "precision": 0.5, "precision_other": 0.6667}
+                             "precision": 0.5, "precision_other": 0.6667,
+                             "gt_amount": 0.0, "finding_amount": 116.0}
     assert out["by_side"]["findings"] == {"bills": 2, "payments": 1, "refunds": 1}
 
 
@@ -91,6 +102,18 @@ def test_type_stats_never_echoes_natural_ids(rich_env):
     text = json.dumps(_stats(rich_env), ensure_ascii=False)
     assert "fp_natural_ids" not in text
     assert "o9" not in text
+
+
+def test_search_diffs_sort_by_amount(rich_env):
+    """sort=amount_desc：金额从大到小，回显生效排序（可进白名单）。"""
+    out, trace = chat.ChatTools().execute("search_diffs", {
+        "source": "engine", "sort": "amount_desc", "limit": 10})
+    assert [r["finding_id"] for r in out["rows"]] == [
+        "F000001", "F000003", "F000002", "F000004"]  # 90 / 11 / 10 / 5
+    assert out["filters"] == {"sort": "amount_desc"}
+    assert "按金额从大到小" in trace
+    bad, _ = chat.ChatTools().execute("search_diffs", {"sort": "bogus"})
+    assert bad["error"] == "INVALID_ARGS"
 
 
 def test_search_engine_confidence_filter(rich_env):

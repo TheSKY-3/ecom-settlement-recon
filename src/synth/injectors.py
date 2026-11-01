@@ -94,10 +94,16 @@ def inject_single_sided(bills: list[dict], payments: list[dict],
                         orders_index: dict[str, dict], pools: dict,
                         gt_rows: list[dict]) -> None:
     drop = set(pools["drop_bill"])
+    dropped_amount = {}
+    for b in bills:
+        if b["order_id"] in drop:
+            dropped_amount[b["order_id"]] = (dropped_amount.get(b["order_id"], 0.0)
+                                             + float(b["settlement_amount"]))
     bills[:] = [b for b in bills if b["order_id"] not in drop]
     for oid in sorted(pools["drop_bill"]):
         gt_rows.append(make_row(oid, "单边账", "删账单", "bills",
-                                "账单缺失：有明细有支付但无账单", len(gt_rows) + 1))
+                                "账单缺失：有明细有支付但无账单", len(gt_rows) + 1,
+                                amount=dropped_amount[oid]))
     for oid in pools["orphan"]:
         bills.append({"bill_id": f"B_{oid}_1", "order_id": oid, "seller_id": "SYNTH",
                       "version": "1", "issued_date": "2023-01-01",
@@ -105,29 +111,39 @@ def inject_single_sided(bills: list[dict], payments: list[dict],
                       "freight_amount": "10.00", "price_amount": "100.00",
                       "settlement_amount": "90.00"})
         gt_rows.append(make_row(oid, "单边账", "孤儿账单", "bills",
-                                "孤儿账单：订单不存在", len(gt_rows) + 1))
+                                "孤儿账单：订单不存在", len(gt_rows) + 1, amount=90.00))
     drop_pay = set(pools["drop_payment"])
+    dropped_paid = {}
+    for p in payments:
+        if p["order_id"] in drop_pay:
+            dropped_paid[p["order_id"]] = (dropped_paid.get(p["order_id"], 0.0)
+                                           + float(p["payment_value"]))
     payments[:] = [p for p in payments if p["order_id"] not in drop_pay]
     for oid in sorted(pools["drop_payment"]):
         gt_rows.append(make_row(oid, "单边账", "删支付", "payments",
-                                "支付缺失", len(gt_rows) + 1))
+                                "支付缺失", len(gt_rows) + 1,
+                                amount=dropped_paid[oid]))
 
 
 def inject_amount_mismatch(bills: list[dict], pools: dict, gt_rows: list[dict]) -> None:
     for oid in pools["wrong_rate"]:
         row = _bill_of(bills, oid)
+        before = float(row["settlement_amount"])
         _recompute(row, WRONG_RATE)
         gt_rows.append(make_row(oid, "金额不符", "费率错误", "bills",
                                 f"佣金费率错误：{WRONG_RATE:.2f} ≠ 标准费率",
-                                len(gt_rows) + 1))
+                                len(gt_rows) + 1,
+                                amount=abs(float(row["settlement_amount"]) - before)))
     for oid in pools["missing_freight"]:
         row = _bill_of(bills, oid)
         if float(row["freight_amount"]) == 0:
             raise ValueError(f"漏运费雷不可埋：{oid} 本身运费为 0（雷将无法判定）")
+        before = float(row["settlement_amount"])
         row["freight_amount"] = "0.00"
         _recompute(row, float(row["commission_rate"]))
         gt_rows.append(make_row(oid, "金额不符", "漏运费", "bills",
-                                "账单漏加运费", len(gt_rows) + 1))
+                                "账单漏加运费", len(gt_rows) + 1,
+                                amount=abs(float(row["settlement_amount"]) - before)))
 
 
 def inject_status_inconsistency(bills: list[dict], orders_index: dict[str, dict],
@@ -146,15 +162,22 @@ def inject_status_inconsistency(bills: list[dict], orders_index: dict[str, dict]
                       "price_amount": f"{price:.2f}",
                       "settlement_amount": f"{price + freight - fee:.2f}"})
         gt_rows.append(make_row(oid, "状态不一致", "取消单被开账单", "bills",
-                                "取消/不可达订单出现在账单中", len(gt_rows) + 1))
+                                "取消/不可达订单出现在账单中", len(gt_rows) + 1,
+                                amount=price + freight - fee))
 
 
 def inject_refund_missing(refunds: list[dict], pools: dict, gt_rows: list[dict]) -> None:
     drop = set(pools["refund_missing"])
+    dropped_amount = {}
+    for r in refunds:
+        if r["order_id"] in drop:
+            dropped_amount[r["order_id"]] = (dropped_amount.get(r["order_id"], 0.0)
+                                             + float(r["refund_amount"]))
     refunds[:] = [r for r in refunds if r["order_id"] not in drop]
     for oid in sorted(drop):
         gt_rows.append(make_row(oid, "退款遗漏", "退款缺失", "refunds",
-                                "已付款的取消单无退款记录", len(gt_rows) + 1))
+                                "已付款的取消单无退款记录", len(gt_rows) + 1,
+                                amount=dropped_amount[oid]))
 
 
 def inject_duplicate(bills: list[dict], pools: dict, gt_rows: list[dict]) -> None:
@@ -164,7 +187,8 @@ def inject_duplicate(bills: list[dict], pools: dict, gt_rows: list[dict]) -> Non
         dup["bill_id"] = row["bill_id"] + "_DUP"
         bills.append(dup)
         gt_rows.append(make_row(oid, "重复结算", "整单重复", "bills",
-                                "同订单同版本账单重复", len(gt_rows) + 1))
+                                "同订单同版本账单重复", len(gt_rows) + 1,
+                                amount=float(row["settlement_amount"])))
 
 
 def inject_version_diff(bills: list[dict], pools: dict, gt_rows: list[dict]) -> None:
@@ -180,4 +204,6 @@ def inject_version_diff(bills: list[dict], pools: dict, gt_rows: list[dict]) -> 
         _recompute(row, COMMISSION_RATE)
         bills.append(v1)
         gt_rows.append(make_row(oid, "版本差异", "两版并存", "bills",
-                                "两版账单并存，按 v2 对账", len(gt_rows) + 1))
+                                "两版账单并存，按 v2 对账", len(gt_rows) + 1,
+                                amount=abs(float(row["settlement_amount"])
+                                           - float(v1["settlement_amount"]))))

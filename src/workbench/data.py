@@ -89,10 +89,10 @@ TABLE_SPECS = (
      "world": "clean", "book": "refunds"},
     {"key": "ground_truth", "label": "标准答案（GT）", "role": "标准答案",
      "columns": ["gt_id", "order_id", "diff_type", "variant", "target_side",
-                 "description"]},
+                 "description", "amount"]},
     {"key": "findings", "label": "引擎发现", "role": "产出",
      "columns": ["finding_id", "order_id", "diff_type", "variant", "target_side",
-                 "confidence", "description", "verified"]},
+                 "confidence", "description", "amount", "verified"]},
 )
 
 
@@ -144,6 +144,31 @@ def load_tables() -> dict:
             "engine_run_id": (summary or {}).get("run_id")}
 
 
+def _row_amount(row: dict) -> float:
+    """行里的涉案金额（GT 是 CSV 字符串、findings 是 float）；缺失/非法按 0。"""
+    try:
+        return round(float(row.get("amount") or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _money_by_type(rows: list[dict]) -> dict:
+    out: dict[str, float] = {}
+    for r in rows:
+        out[r["diff_type"]] = round(out.get(r["diff_type"], 0.0) + _row_amount(r), 2)
+    return out
+
+
+def _engine_money() -> dict | None:
+    """引擎发现涉案金额汇总；引擎结果未生成时返回 None（概览页降级展示）。"""
+    path = _engine_dir() / "findings.json"
+    if not path.is_file():
+        return None
+    rows = json.loads(path.read_text(encoding="utf-8"))["findings"]
+    return {"total_amount": round(sum(_row_amount(r) for r in rows), 2),
+            "by_type_amount": _money_by_type(rows)}
+
+
 def load_overview() -> dict:
     counts = {}
     for world in ("clean", "dirty"):
@@ -165,12 +190,16 @@ def load_overview() -> dict:
             "total": len(rows),
             "by_type": dict(Counter(r["diff_type"] for r in rows)),
             "by_side": dict(Counter(r["target_side"] for r in rows)),
+            "total_amount": round(sum(_row_amount(r) for r in rows), 2),
+            "by_type_amount": _money_by_type(rows),
         },
+        "engine_money": _engine_money(),
     }
 
 
 def _filter_page(rows: list[dict], diff_type: str | None, side: str | None,
-                 q: str | None, page: int, page_size: int) -> dict:
+                 q: str | None, page: int, page_size: int,
+                 sort: str | None = None) -> dict:
     if diff_type:
         rows = [r for r in rows if r["diff_type"] == diff_type]
     if side:
@@ -179,6 +208,10 @@ def _filter_page(rows: list[dict], diff_type: str | None, side: str | None,
         needle = q.lower()
         rows = [r for r in rows
                 if needle in r["order_id"].lower() or needle in r["description"].lower()]
+    if sort:
+        if sort != "amount_desc":
+            raise ValueError(f"未知排序：{sort}（支持 amount_desc）")
+        rows = sorted(rows, key=_row_amount, reverse=True)
     total = len(rows)
     start = (page - 1) * page_size
     return {"total": total, "page": page, "page_size": page_size,
@@ -186,8 +219,8 @@ def _filter_page(rows: list[dict], diff_type: str | None, side: str | None,
 
 
 def load_diffs(diff_type: str | None, side: str | None, q: str | None,
-               page: int, page_size: int) -> dict:
-    return _filter_page(_gt_rows(), diff_type, side, q, page, page_size)
+               page: int, page_size: int, sort: str | None = None) -> dict:
+    return _filter_page(_gt_rows(), diff_type, side, q, page, page_size, sort=sort)
 
 
 def _engine_dir() -> Path:
@@ -207,7 +240,8 @@ def load_engine_diffs(diff_type: str | None, side: str | None, q: str | None,
                       min_confidence: float | None = None,
                       max_confidence: float | None = None,
                       verified: bool | None = None,
-                      natural_only: bool = False) -> dict | None:
+                      natural_only: bool = False,
+                      sort: str | None = None) -> dict | None:
     """引擎发现列表；可选过滤（D014 给对话工具用，默认不过滤，老调用不受影响）。
 
     natural_only=True 只留"订单在标准答案里完全没有记录"的发现，即自然差异口径
@@ -228,7 +262,7 @@ def load_engine_diffs(diff_type: str | None, side: str | None, q: str | None,
     if natural_only:
         gt_orders = {r["order_id"] for r in _gt_rows()}
         rows = [r for r in rows if r["order_id"] not in gt_orders]
-    return _filter_page(rows, diff_type, side, q, page, page_size)
+    return _filter_page(rows, diff_type, side, q, page, page_size, sort=sort)
 
 
 def _db_query(sql: str, params: tuple) -> list[dict]:

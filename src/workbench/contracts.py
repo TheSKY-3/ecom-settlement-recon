@@ -1,7 +1,12 @@
 """对外 JSON 契约：响应形状在这里定义，前端与后续 Agent 出口共用同一套口径。"""
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _empty_amount_none(v):
+    """CSV 读回的空金额（旧考卷缺列）按 None 出，不报校验错。"""
+    return None if v in ("", None) else v
 
 
 class DiffRow(BaseModel):
@@ -11,6 +16,9 @@ class DiffRow(BaseModel):
     variant: str
     target_side: str
     description: str
+    amount: float | None = None   # 涉案金额（考卷 v1.2）；旧考卷缺列时为 None
+
+    _amount = field_validator("amount", mode="before")(_empty_amount_none)
 
 
 class DiffsPage(BaseModel):
@@ -50,7 +58,10 @@ class FindingRow(BaseModel):
     target_side: str
     confidence: float
     description: str
+    amount: float | None = None   # 涉案金额（引擎发现现场复算）
     verified: bool
+
+    _amount = field_validator("amount", mode="before")(_empty_amount_none)
 
 
 class EnginePage(BaseModel):
@@ -65,6 +76,7 @@ class Overview(BaseModel):
     clean: dict[str, int]
     dirty: dict[str, int]
     gt: dict
+    engine_money: dict | None = None   # 引擎发现涉案金额汇总；未跑引擎时为 None
 
 
 class DataTable(BaseModel):

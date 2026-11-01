@@ -214,6 +214,33 @@ def test_chat_service_no_key_uses_deterministic_fallback(chat_env, monkeypatch):
     assert "2" in out.answer and out.session_turns == 1
 
 
+def test_chat_service_no_key_answers_amount_top(chat_env, monkeypatch):
+    """无 key 也接得住金额问题：预设「涉案金额最大的 N 笔」必须确定性直答。"""
+    from tests.test_workbench_data import _rewrite_gt_with_amounts
+    _rewrite_gt_with_amounts(chat_env, {"GT000001": "13.00", "GT000002": "1.00",
+                                        "GT000003": "7.00", "GT000004": "2.50"})
+    monkeypatch.setattr(llm, "available", lambda: False)
+    service = chat.ChatService()
+    out = service.turn(None, "涉案金额最大的 3 笔差异是哪些？")
+    assert out.source == "fallback" and out.reason == "NO_KEY"
+    lines = out.answer.splitlines()
+    assert lines[0] == "涉案金额最大的 3 笔（标准答案口径，从大到小）："
+    amounts = [float(l.split("R$ ")[1].split("，")[0].replace(",", ""))
+               for l in lines[1:]]
+    assert amounts == [13.0, 7.0, 2.5]          # GT000001 → GT000003 → GT000004
+
+
+def test_submit_answer_literal_newlines_normalized(chat_env, monkeypatch):
+    """模型偶尔把换行写成字面 \\n 两个字符；交卷时转成真换行，前端才能分段。"""
+    monkeypatch.setattr(llm, "available", lambda: True)
+    scripted = [_submit("共 2 条差异。\\n其中单边账 2 条。")]
+    service = chat.ChatService(engine=chat.ChatEngine(
+        gateway=lambda messages, tools: scripted.pop(0)))
+    out = service.turn(None, "一共多少条差异？")
+    assert out.source == "llm"
+    assert "\n" in out.answer and "\\n" not in out.answer
+
+
 def test_chat_service_turn_limit():
     service = chat.ChatService(max_turns=1)
     service.engine = chat.ChatEngine(gateway=lambda messages, tools: _submit("好的。"))

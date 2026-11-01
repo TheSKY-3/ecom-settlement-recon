@@ -10,7 +10,7 @@ import json
 from src.workbench import data
 
 _EVIDENCE_FREE = ("finding_id", "order_id", "diff_type", "variant",
-                  "target_side", "confidence", "description", "verified")
+                  "target_side", "confidence", "description", "amount", "verified")
 
 
 def order_facts(order_id: str) -> dict | None:
@@ -75,12 +75,21 @@ def _all_findings() -> list[dict] | None:
     return None if page is None else page["rows"]
 
 
+def _amount(row: dict) -> float:
+    try:
+        return round(float(row.get("amount") or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def type_stats() -> dict | None:
-    """按类型/账本聚合：GT 数、发现数、TP/FN/FP、召回、两种精确率。
+    """按类型/账本聚合：GT 数、发现数、TP/FN/FP、召回、两种精确率、涉案金额。
 
     口径与 evals/score.py 一致：命中按 (order_id, diff_type)；自然差异不计入
     precision_other（它是数据本身带的错，不是引擎判错），同时给出含自然差异的
     precision，方便用户看清"报了 1074 条里只有 500 条是真差异"这种观感。
+    金额口径：gt_amount 用考卷 v1.2 的注入金额，finding_amount 用引擎复算金额，
+    两者经判分器逐条对账（amount_consistency）。
     """
     findings = _all_findings()
     if findings is None:
@@ -115,6 +124,10 @@ def type_stats() -> dict | None:
             "precision": round(tp / len(tf), 4) if tf else None,
             "precision_other": (round(tp / (tp + fp_other), 4)
                                 if (tp + fp_other) else None),
+            "gt_amount": round(sum(_amount(r) for r in gt_rows
+                                   if r["diff_type"] == dtype), 2),
+            "finding_amount": round(sum(_amount(f) for f in findings
+                                        if f["diff_type"] == dtype), 2),
         })
 
     def _side(rows: list[dict]) -> dict:
@@ -137,5 +150,7 @@ def type_stats() -> dict | None:
                           if find_keys else None),
             "precision_other": (round(tp_total / (tp_total + fp_total - fp_natural_total), 4)
                                 if (tp_total + fp_total - fp_natural_total) else None),
+            "gt_amount": round(sum(_amount(r) for r in gt_rows), 2),
+            "finding_amount": round(sum(_amount(f) for f in findings), 2),
         },
     }

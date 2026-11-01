@@ -136,6 +136,13 @@
                 <option value="refunds">退款</option>
               </select>
             </label>
+            <label class="field">
+              <span>排序</span>
+              <select id="f-sort">
+                <option value="">默认</option>
+                <option value="amount_desc">涉案金额 ↓</option>
+              </select>
+            </label>
             <label class="field field--grow">
               <span>搜索</span>
               <input id="f-q" type="search" placeholder="订单号或描述关键词…">
@@ -145,11 +152,11 @@
             <table class="table" id="diffs-table">
               <thead>
                 <tr id="diffs-head">
-                  <th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>描述</th>
+                  <th>编号</th><th>订单号</th><th>类型</th><th>变体</th><th>所在账本</th><th>涉案金额</th><th>描述</th>
                 </tr>
               </thead>
               <tbody id="diffs-body">
-                <tr><td colspan="6" class="empty">加载中…</td></tr>
+                <tr><td colspan="7" class="empty">加载中…</td></tr>
               </tbody>
             </table>
           </div>

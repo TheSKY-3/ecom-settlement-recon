@@ -71,18 +71,20 @@ def test_both_export_has_two_sheets_and_pairs(export_env):
     assert len(matched) == 4
     solo = [r for r in rows if r[6].startswith("仅引擎")]
     assert len(solo) == 1 and solo[0][0] is None and solo[0][1] == "F000005"
-    # 金额是数值、置信度是数值，订单号保持文本
-    pay_cell = ws.cell(row=2, column=15)
+    # 金额是数值、置信度是数值，订单号保持文本（涉案金额在第 12 列，支付额第 16 列）
+    pay_cell = ws.cell(row=2, column=16)
     assert pay_cell.value == 15.0 and pay_cell.number_format == "#,##0.00"
     assert ws.cell(row=2, column=10).value == 1.0
+    assert ws.cell(row=2, column=12).number_format == "#,##0.00"
     assert ws.cell(row=2, column=3).number_format == "@"
 
     book = wb["订单汇总"]
     assert [c.value for c in book[1]] == export_mod.SUMMARY_HEADERS
     assert book.max_row == 5
     summary = {r[0]: r for r in book.iter_rows(min_row=2, values_only=True)}
-    assert summary["o2"][1] == 2 and summary["o2"][3] == 2
-    assert summary["o9"][3] == 0 and summary["o9"][4] == 1
+    assert summary["o2"][1] == 2 and summary["o2"][4] == 2
+    assert isinstance(summary["o2"][3], (int, float))  # 涉案金额为订单内合计
+    assert summary["o9"][4] == 0 and summary["o9"][5] == 1
 
 
 def test_gt_export_matches_engine_but_only_gt_rows(export_env):
